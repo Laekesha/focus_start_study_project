@@ -1,48 +1,75 @@
--- +for all i in 1 ? (insert?), +exceptions with rollback and sql%isopen & close, +new collection for file-status extended ass array
+-- +for all i in 1 ? (insert), +exceptions with rollback and sql%isopen & close, +new collection for file-status extended ass array
 -- id_record, status (new, processed, rejected), error_message
 -- + 2 variables for check header an check trailer
--- excep when p after r. excep when new card, merch, mcc (?). if file is incorrect - no new card/merch/mcc!
+-- excep when p after r. excep when new card, merch, mcc (?). if file is incorrect - rollback, no new card/merch/mcc!
 -- + inserts
 
 create or replace package fs11_processing_incoming_file as
     procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2); -- point of entry. public(cause declaring in the specification)
 end fs11_processing_incoming_file;
 
--- two variables for header and trailer isnt public ?
-
 create or replace package body fs11_processing_incoming_file as
 
-    type fields_tab is table of varchar2(2000);
-    array fields_tab := fields_tab();
+    type record_fields is table of varchar2(2000);
+    type transactions is table of record_fields;
+    purchases transactions := transactions();
+    refunds transactions := transactions();
+    array record_fields := record_fields();
     purchase_count number;
     refund_count number;
     file_length number;
     file_pos number;
     file_string varchar2(32767);
+    purchases_integrity exception;
+    refunds_integrity exception;
+
+    procedure fs11_print_array(p_parsed_array record_fields) as
+    begin
+        for i in 1..p_parsed_array.COUNT -- start from 2 to remove first litter constant field
+            loop
+                if p_parsed_array(i) is NULL then
+                    dbms_output.put_line('NULL');
+                else
+                    dbms_output.put_line(p_parsed_array(i));
+                end if;
+            end loop;
+    end;
 
     procedure fs11_proc_header as
     begin
-        null;
+        dbms_output.put_line('HEADER:');
+        fs11_print_array(array);
     end;
 
     procedure fs11_proc_purchase as
     begin
-        null;
+        dbms_output.put_line('PURCHASE:');
+        fs11_print_array(array);
+        purchases.extend;
+        purchases(purchases.LAST) := array;
     end;
 
     procedure fs11_proc_refund as
     begin
-        null;
+        dbms_output.put_line('REFUND:');
+        fs11_print_array(array);
+        refunds.extend;
+        refunds(refunds.LAST) := array;
     end;
 
     procedure fs11_proc_trailer as
     begin
-        null;
+        if refunds.count <> to_number(array(2)) then
+            raise purchases_integrity;
+        end if;
+        if purchases.count <> to_number(array(3)) then
+            raise refunds_integrity;
+        end if;
     end;
 
     procedure fs11_parse_record as
-        delimiter_pos  number;
-        record_end_pos number;
+        delimiter_pos       number;
+        record_end_pos      number;
         record_field_number integer := 0;
     begin
         record_end_pos := INSTR(file_string, chr(10), file_pos);
@@ -85,24 +112,10 @@ create or replace package body fs11_processing_incoming_file as
         end if;
     end;
 
-    procedure PRINT_ARRAY(p_parsed_array fields_tab) as
-    begin
-        for i in 1..p_parsed_array.COUNT -- start from 2 to remove first litter constant field
-            loop
-                if p_parsed_array(i) is NULL then
-                    dbms_output.put_line('NULL');
-                else
-                    dbms_output.put_line(p_parsed_array(i));
-                end if;
-            end loop;
-    end;
-
     procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2) as
     begin
         file_string := p_file_string;
-        array := fields_tab();
-        purchase_count := 0;
-        refund_count := 0;
+        array := record_fields();
         file_pos := 1;
 
         file_length := LENGTH(file_string);
@@ -112,23 +125,13 @@ create or replace package body fs11_processing_incoming_file as
             fs11_parse_record;
             case (array(1))
                 when 'H' then
-                    -- can process header here
-                    dbms_output.put_line('HEADER:');
-                    PRINT_ARRAY(array);
+                    fs11_proc_header;
                 when 'P' then
-                    -- can process purchase here
-                    dbms_output.put_line('PURCHASE:');
-                    purchase_count := purchase_count + 1;
-                    PRINT_ARRAY(array);
+                    fs11_proc_purchase;
                 when 'R' then
-                    -- can process refund here
-                    dbms_output.put_line('REFUND:');
-                    refund_count := refund_count + 1;
-                    PRINT_ARRAY(array);
+                    fs11_proc_refund;
                 when 'T' then
-                    -- can process trailer here
-                    dbms_output.put_line('TRAILER:');
-                    PRINT_ARRAY(array);
+                    fs11_proc_trailer;
                 else
                     dbms_output.put_line(array(1));
                 end case;
@@ -136,9 +139,13 @@ create or replace package body fs11_processing_incoming_file as
                 exit;
             end if;
         end loop;
-        -- here we can check our counters with trailer values
-        dbms_output.put_line('Purchases: ' || purchase_count);
-        dbms_output.put_line('Refunds: ' || refund_count);
+
+    exception
+        when purchases_integrity
+            then dbms_output.put_line('Error in the trailer. Number of purchases is wrong');
+        when refunds_integrity
+            then dbms_output.put_line('Error in the trailer. Number of refunds is wrong');
+
     end;
 
 end fs11_processing_incoming_file;

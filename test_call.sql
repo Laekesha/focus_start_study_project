@@ -1,5 +1,5 @@
 declare
-    file_string varchar2(32767) := 'H;123456789012;12345678901234' ||
+    file_string varchar2(32767) := 'H;1234;1234' ||
                                    chr(10) ||
                                    'P;1234567890abcdefghij1234567890abcdefghij;1;12345678901234;0;0;1234;comment' ||
                                    chr(10) ||
