@@ -20,30 +20,45 @@ create or replace package body fs11_processing_incoming_file as
     file_length number;
     file_pos number;
     file_string varchar2(32767);
+    file_name varchar2(200);
+    file_id varchar2(12);
     purchases_integrity exception;
     refunds_integrity exception;
+    file_id_exist exception;
+    trans_id_exist exception;
+
+    -- delete later
+    procedure print(p_message varchar2) as
+        begin
+            dbms_output.put_line(p_message);
+        end;
 
     procedure fs11_print_array(p_parsed_array record_fields) as
     begin
         for i in 1..p_parsed_array.COUNT -- start from 2 to remove first litter constant field
             loop
                 if p_parsed_array(i) is NULL then
-                    dbms_output.put_line('NULL');
+                    print('NULL');
                 else
-                    dbms_output.put_line(p_parsed_array(i));
+                    print(p_parsed_array(i));
                 end if;
             end loop;
     end;
 
     procedure fs11_proc_header as
     begin
-        dbms_output.put_line('HEADER:');
+        file_id := array(2);
+        insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status) values
+                                      (file_id, file_name, to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
+        print('HEADER:');
         fs11_print_array(array);
+        exception
+            when dup_val_on_index then raise file_id_exist;
     end;
 
     procedure fs11_proc_purchase as
     begin
-        dbms_output.put_line('PURCHASE:');
+        print('PURCHASE:');
         fs11_print_array(array);
         purchases.extend;
         purchases(purchases.LAST) := array;
@@ -51,7 +66,7 @@ create or replace package body fs11_processing_incoming_file as
 
     procedure fs11_proc_refund as
     begin
-        dbms_output.put_line('REFUND:');
+        print('REFUND:');
         fs11_print_array(array);
         refunds.extend;
         refunds(refunds.LAST) := array;
@@ -65,6 +80,12 @@ create or replace package body fs11_processing_incoming_file as
         if purchases.count <> to_number(array(3)) then
             raise refunds_integrity;
         end if;
+    end;
+
+    procedure error_log(p_message varchar2) as
+    begin
+        update FS11_FILE_RECORDS set error_message = p_message where FS11_FILE_RECORDS.FILE_ID = file_id;
+        print(p_message);
     end;
 
     procedure fs11_parse_record as
@@ -117,9 +138,9 @@ create or replace package body fs11_processing_incoming_file as
         file_string := p_file_string;
         array := record_fields();
         file_pos := 1;
-
+        file_name := p_file_name;
         file_length := LENGTH(file_string);
-        dbms_output.put_line('File length: ' || file_length);
+        print('File length: ' || file_length);
 
         loop
             fs11_parse_record;
@@ -133,18 +154,45 @@ create or replace package body fs11_processing_incoming_file as
                 when 'T' then
                     fs11_proc_trailer;
                 else
-                    dbms_output.put_line(array(1));
+                    print(array(1));
                 end case;
             if file_pos = file_length then
                 exit;
             end if;
         end loop;
 
+begin
+    forall indx in 1..purchases.count
+        insert into fs11_purchases values (
+        purchases(indx)(2),
+        purchases(indx)(3),
+        to_date(purchases(indx)(4), 'yyyymmddhh24miss'),
+        purchases(indx)(5),
+        purchases(indx)(6),
+        purchases(indx)(7),
+        purchases(indx)(8)
+        );
+
+    forall indx in 1..refunds.count
+        insert into fs11_refunds values (
+        refunds(indx)(2),
+        refunds(indx)(3),
+        to_date(refunds(indx)(4), 'yyyymmddhh24miss'),
+        refunds(indx)(5),
+        refunds(indx)(6),
+        refunds(indx)(7),
+        refunds(indx)(8)
+        );
+
     exception
-        when purchases_integrity
-            then dbms_output.put_line('Error in the trailer. Number of purchases is wrong');
-        when refunds_integrity
-            then dbms_output.put_line('Error in the trailer. Number of refunds is wrong');
+        when dup_val_on_index then raise trans_id_exist;
+end;
+
+    exception
+        when file_id_exist then error_log('This file identifier was used before.');
+        when purchases_integrity then error_log('Error in the trailer. Number of purchases is wrong.');
+        when refunds_integrity then error_log('Error in the trailer. Number of refunds is wrong');
+        when trans_id_exist then error_log('This transaction identifier was used before.');
 
     end;
 

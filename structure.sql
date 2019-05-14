@@ -15,15 +15,15 @@ drop table fs11_periods;
 
 create table fs11_file_records (
     file_id number not null primary key, -- or just id?
-    file_name varchar2(1000) not null,
+    file_name varchar2(200) not null,
     file_date date not null,
-    file_type varchar2(100)  not null
+    file_type varchar2(8)  not null
         constraint check_file_type
             check (file_type in ('incoming', 'response', 'report')),
     file_status varchar2(100)  not null
         constraint check_file_status
             check (file_status in ('new', 'processed', 'rejected')),
-    error_message varchar2(1000)
+    error_message varchar2(1000) default null
 );
 
 create table fs11_file_content (
