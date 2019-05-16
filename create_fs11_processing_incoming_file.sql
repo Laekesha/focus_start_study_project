@@ -10,6 +10,12 @@ end fs11_processing_incoming_file;
 
 create or replace package body fs11_processing_incoming_file as
 
+    type purchases_records is table of fs11_purchases%rowtype;
+--     type refunds_records is table of fs11_refunds%rowtype;
+
+    purchase_record_collection purchases_records := purchases_records();
+--     refunds_record_collection refunds_records := refunds_records();
+
     type record_fields is table of varchar2(2000);
     type transactions is table of record_fields;
     purchases transactions := transactions();
@@ -57,11 +63,19 @@ create or replace package body fs11_processing_incoming_file as
     end;
 
     procedure fs11_proc_purchase as
+        i number;
     begin
         print('PURCHASE:');
         fs11_print_array(array);
-        purchases.extend;
-        purchases(purchases.LAST) := array;
+        purchase_record_collection.extend;
+        i := purchase_record_collection.last;
+        purchase_record_collection(i).card_num := array(2);
+        purchase_record_collection(i).id := array(3);
+        purchase_record_collection(i).transaction_date := to_date(array(4), 'yyyymmddhh24miss');
+        purchase_record_collection(i).transaction_amount := to_number(array(5));
+        purchase_record_collection(i).merchant_id := array(6);
+        purchase_record_collection(i).mcc := to_number(array(7), '9999');
+        purchase_record_collection(i).comment_purchase := array(8);
     end;
 
     procedure fs11_proc_refund as
@@ -74,10 +88,12 @@ create or replace package body fs11_processing_incoming_file as
 
     procedure fs11_proc_trailer as
     begin
-        if refunds.count <> to_number(array(2)) then
+        print('Trailer purchases: '||array(2)||' purchase_record_collection.count: '||purchase_record_collection.count);
+        print('Trailer refunds: '||array(3));
+        if purchase_record_collection.count <> to_number(array(2)) then
             raise purchases_integrity;
         end if;
-        if purchases.count <> to_number(array(3)) then
+        if refunds.count <> to_number(array(3)) then
             raise refunds_integrity;
         end if;
     end;
@@ -134,6 +150,7 @@ create or replace package body fs11_processing_incoming_file as
     end;
 
     procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2) as
+
     begin
         file_string := p_file_string;
         array := record_fields();
@@ -162,27 +179,18 @@ create or replace package body fs11_processing_incoming_file as
         end loop;
 
 begin
-    forall indx in 1..purchases.count
+     forall indx in 1..purchase_record_collection.count
         insert into fs11_purchases values (
-        purchases(indx)(2),
-        purchases(indx)(3),
-        to_date(purchases(indx)(4), 'yyyymmddhh24miss'),
-        purchases(indx)(5),
-        purchases(indx)(6),
-        purchases(indx)(7),
-        purchases(indx)(8)
+            purchase_record_collection(indx).card_num,
+            purchase_record_collection(indx).id,
+            purchase_record_collection(indx).transaction_date,
+            purchase_record_collection(indx).transaction_amount,
+            purchase_record_collection(indx).merchant_id,
+            purchase_record_collection(indx).mcc,
+            purchase_record_collection(indx).comment_purchase
         );
 
-    forall indx in 1..refunds.count
-        insert into fs11_refunds values (
-        refunds(indx)(2),
-        refunds(indx)(3),
-        to_date(refunds(indx)(4), 'yyyymmddhh24miss'),
-        refunds(indx)(5),
-        refunds(indx)(6),
-        refunds(indx)(7),
-        refunds(indx)(8)
-        );
+        commit;
 
     exception
         when dup_val_on_index then raise trans_id_exist;
