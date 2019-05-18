@@ -12,7 +12,7 @@ drop table fs11_periods;
 -- to_char('yyyy-mm-dd hh24:mi:ss')
 
 create table fs11_file_records (
-    file_id       number        not null primary key, -- or just id?
+    file_id       number        not null primary key, -- or just id? MAKE VARCHAR!!!
     file_name     varchar2(200) not null,
     file_date     date          not null,
     file_type     varchar2(8)   not null
@@ -25,7 +25,7 @@ create table fs11_file_records (
 );
 
 create table fs11_file_content (
-    file_id      number        not null primary key
+    file_id      number        not null primary key -- MAKE VARCHAR!!!
         constraint fk_file_id
             references fs11_file_records,
     file_content varchar2(200) not null
@@ -38,7 +38,7 @@ create table fs11_purchases (
     transaction_amount number(10)    not null,
     merchant_id        varchar2(30)  not null,
     mcc                number(4),
-    comment_purchase   varchar2(200) not null
+    comment_purchase   varchar2(200) not null -- MAKE NULLABLE!!!!
 );
 
 create table fs11_refunds (
@@ -50,7 +50,7 @@ create table fs11_refunds (
     purchase_id        varchar2(12)   not null
         constraint fs11_refunds_fs11_purchases_id_fk -- = fs11_purchases.id
             references fs11_purchases (id),
-    comment_refund     varchar2(2000) not null
+    comment_refund     varchar2(2000) not null -- MAKE NULLABLE!!!!
 );
 
 create table fs11_clients (

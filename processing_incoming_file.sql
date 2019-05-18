@@ -13,13 +13,8 @@ create or replace package body fs11_processing_incoming_file as
     refunds refunds_records := refunds_records();
 
     type record_fields is table of varchar2(2000);
-    type transactions is table of record_fields;
-    purchases transactions := transactions();
-    refunds transactions := transactions();
-
     array record_fields := record_fields();
-    purchase_count number;
-    refund_count number;
+
     file_length number;
     file_pos number;
     file_string varchar2(32767);
@@ -62,8 +57,8 @@ create or replace package body fs11_processing_incoming_file as
     procedure fs11_proc_purchase as
         i number;
     begin
-        print('PURCHASE:');
-        fs11_print_array(array);
+--         print('PURCHASE:');
+--         fs11_print_array(array);
         purchases.extend;
         i := purchases.last;
         purchases(i).card_num := array(2);
@@ -76,11 +71,19 @@ create or replace package body fs11_processing_incoming_file as
     end;
 
     procedure fs11_proc_refund as
+    i number;
     begin
-        print('REFUND:');
-        fs11_print_array(array);
+--         print('REFUND:');
+--         fs11_print_array(array);
         refunds.extend;
-        refunds(refunds.LAST) := array;
+        i := refunds.last;
+        refunds(i).card_num := array(2);
+        refunds(i).id := array(3);
+        refunds(i).transaction_date := to_date(array(4), 'yyyymmddhh24miss');
+        refunds(i).transaction_amount := to_number(array(5));
+        refunds(i).merchant_id := array(6);
+        refunds(i).purchase_id := array(7);
+        refunds(i).comment_refund := array(8);
     end;
 
     procedure fs11_proc_trailer as
@@ -154,6 +157,10 @@ create or replace package body fs11_processing_incoming_file as
         file_pos := 1;
         file_name := p_file_name;
         file_length := LENGTH(file_string);
+
+        purchases.delete;
+        refunds.delete;
+
         print('File length: ' || file_length);
 
         loop
@@ -201,6 +208,8 @@ create or replace package body fs11_processing_incoming_file as
         exception
             when dup_val_on_index then raise trans_id_exist;
         end;
+
+    print('Complete.');
 
     exception
         when file_id_exist then error_log('This file identifier was used before.');
