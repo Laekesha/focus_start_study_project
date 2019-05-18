@@ -1,25 +1,22 @@
--- +for all i in 1 ? (insert), +exceptions with rollback and sql%isopen & close, +new collection for file-status extended ass array
--- id_record, status (new, processed, rejected), error_message
--- + 2 variables for check header an check trailer
--- excep when p after r. excep when new card, merch, mcc (?). if file is incorrect - rollback, no new card/merch/mcc!
--- + inserts
+-- add new excep-s with rollback/savepoint. sql%isopen&close(?). new coll-n for file-status extended array (?)
+-- exc: wrong order. unknown card, merch, mcc(?). if file is incorrect (diff.ways) - rollback, no new card/merch/mcc!
 
 create or replace package fs11_processing_incoming_file as
-    procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2); -- point of entry. public(cause declaring in the specification)
+    procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2); -- point of entry
 end fs11_processing_incoming_file;
 
 create or replace package body fs11_processing_incoming_file as
 
     type purchases_records is table of fs11_purchases%rowtype;
---     type refunds_records is table of fs11_refunds%rowtype;
-
-    purchase_record_collection purchases_records := purchases_records();
---     refunds_record_collection refunds_records := refunds_records();
+    type refunds_records is table of fs11_refunds%rowtype;
+    purchases purchases_records := purchases_records();
+    refunds refunds_records := refunds_records();
 
     type record_fields is table of varchar2(2000);
     type transactions is table of record_fields;
     purchases transactions := transactions();
     refunds transactions := transactions();
+
     array record_fields := record_fields();
     purchase_count number;
     refund_count number;
@@ -28,16 +25,16 @@ create or replace package body fs11_processing_incoming_file as
     file_string varchar2(32767);
     file_name varchar2(200);
     file_id varchar2(12);
+
     purchases_integrity exception;
     refunds_integrity exception;
     file_id_exist exception;
     trans_id_exist exception;
 
-    -- delete later
     procedure print(p_message varchar2) as
-        begin
-            dbms_output.put_line(p_message);
-        end;
+    begin
+        dbms_output.put_line(p_message);
+    end;
 
     procedure fs11_print_array(p_parsed_array record_fields) as
     begin
@@ -54,12 +51,12 @@ create or replace package body fs11_processing_incoming_file as
     procedure fs11_proc_header as
     begin
         file_id := array(2);
-        insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status) values
-                                      (file_id, file_name, to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
+        insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status)
+        values (file_id, file_name, to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
         print('HEADER:');
         fs11_print_array(array);
-        exception
-            when dup_val_on_index then raise file_id_exist;
+    exception
+        when dup_val_on_index then raise file_id_exist;
     end;
 
     procedure fs11_proc_purchase as
@@ -67,15 +64,15 @@ create or replace package body fs11_processing_incoming_file as
     begin
         print('PURCHASE:');
         fs11_print_array(array);
-        purchase_record_collection.extend;
-        i := purchase_record_collection.last;
-        purchase_record_collection(i).card_num := array(2);
-        purchase_record_collection(i).id := array(3);
-        purchase_record_collection(i).transaction_date := to_date(array(4), 'yyyymmddhh24miss');
-        purchase_record_collection(i).transaction_amount := to_number(array(5));
-        purchase_record_collection(i).merchant_id := array(6);
-        purchase_record_collection(i).mcc := to_number(array(7), '9999');
-        purchase_record_collection(i).comment_purchase := array(8);
+        purchases.extend;
+        i := purchases.last;
+        purchases(i).card_num := array(2);
+        purchases(i).id := array(3);
+        purchases(i).transaction_date := to_date(array(4), 'yyyymmddhh24miss');
+        purchases(i).transaction_amount := to_number(array(5));
+        purchases(i).merchant_id := array(6);
+        purchases(i).mcc := to_number(array(7), '9999');
+        purchases(i).comment_purchase := array(8);
     end;
 
     procedure fs11_proc_refund as
@@ -88,9 +85,9 @@ create or replace package body fs11_processing_incoming_file as
 
     procedure fs11_proc_trailer as
     begin
-        print('Trailer purchases: '||array(2)||' purchase_record_collection.count: '||purchase_record_collection.count);
-        print('Trailer refunds: '||array(3));
-        if purchase_record_collection.count <> to_number(array(2)) then
+        print('Trailer purchases: ' || array(2) || ' purchase_record_collection.count: ' || purchases.count);
+        print('Trailer refunds: ' || array(3));
+        if purchases.count <> to_number(array(2)) then
             raise purchases_integrity;
         end if;
         if refunds.count <> to_number(array(3)) then
@@ -178,23 +175,32 @@ create or replace package body fs11_processing_incoming_file as
             end if;
         end loop;
 
-begin
-     forall indx in 1..purchase_record_collection.count
-        insert into fs11_purchases values (
-            purchase_record_collection(indx).card_num,
-            purchase_record_collection(indx).id,
-            purchase_record_collection(indx).transaction_date,
-            purchase_record_collection(indx).transaction_amount,
-            purchase_record_collection(indx).merchant_id,
-            purchase_record_collection(indx).mcc,
-            purchase_record_collection(indx).comment_purchase
-        );
+        begin
+            forall indx in 1..purchases.count
+                insert into fs11_purchases
+                values (purchases(indx).card_num,
+                        purchases(indx).id,
+                        purchases(indx).transaction_date,
+                        purchases(indx).transaction_amount,
+                        purchases(indx).merchant_id,
+                        purchases(indx).mcc,
+                        purchases(indx).comment_purchase);
 
-        commit;
+            forall indx in 1..refunds.count
+                insert into fs11_refunds
+                values (refunds(indx).card_num,
+                        refunds(indx).id,
+                        refunds(indx).transaction_date,
+                        refunds(indx).transaction_amount,
+                        refunds(indx).merchant_id,
+                        refunds(indx).purchase_id,
+                        refunds(indx).comment_refund);
 
-    exception
-        when dup_val_on_index then raise trans_id_exist;
-end;
+            commit;
+
+        exception
+            when dup_val_on_index then raise trans_id_exist;
+        end;
 
     exception
         when file_id_exist then error_log('This file identifier was used before.');
