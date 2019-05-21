@@ -1,8 +1,10 @@
--- add new excep-s with rollback/savepoint. sql%isopen&close(?). new coll-n for file-status extended array (?)
+-- new excep-s with rollback/savepoint. sql%isopen&close(?). new coll-n for file-status extended array (?)
 -- exc: wrong order. unknown card, merch, mcc(?). if file is incorrect (diff.ways) - rollback, no new card/merch/mcc!
+-- difference between purchases and their refunds
+-- pls_integer for collection ?
 
 create or replace package fs11_processing_incoming_file as
-    procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2); -- point of entry
+    procedure fs11_proc_file(p_file_string clob); -- point of entry
 end fs11_processing_incoming_file;
 
 create or replace package body fs11_processing_incoming_file as
@@ -12,13 +14,12 @@ create or replace package body fs11_processing_incoming_file as
     purchases purchases_records := purchases_records();
     refunds refunds_records := refunds_records();
 
-    type record_fields is table of varchar2(2000);
+    type record_fields is table of varchar2(2000); -- index by pls_integer;
     array record_fields := record_fields();
 
     file_length number;
     file_pos number;
-    file_string varchar2(32767);
-    file_name varchar2(200);
+    file_string clob/*varchar2(32767)*/;
     file_id varchar2(12);
 
     purchases_integrity exception;
@@ -47,7 +48,7 @@ create or replace package body fs11_processing_incoming_file as
     begin
         file_id := array(2);
         insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status)
-        values (file_id, file_name, to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
+        values (file_id, 'not/need', to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
         print('HEADER:');
         fs11_print_array(array);
     exception
@@ -149,13 +150,12 @@ create or replace package body fs11_processing_incoming_file as
         end if;
     end;
 
-    procedure fs11_proc_file(p_file_name varchar2, p_file_string varchar2) as
+    procedure fs11_proc_file(p_file_string clob) as
 
     begin
         file_string := p_file_string;
         array := record_fields();
         file_pos := 1;
-        file_name := p_file_name;
         file_length := LENGTH(file_string);
 
         purchases.delete;

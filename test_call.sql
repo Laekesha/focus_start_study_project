@@ -1,7 +1,7 @@
 declare
-    file_string varchar2(32767);
-    function generate_file_content(transaction_count number, refunds_count number) return varchar2 as
-        content varchar2(32767);
+    file_string clob;
+    function generate_file_content(transaction_count number, refunds_count number) return clob as
+        content clob;
         transaction varchar2(32767);
     begin
         content := 'H;' || trunc(DBMS_RANDOM.VALUE * 999999999999)/*DBMS_RANDOM.STRING('x', 12)*/ || ';';
@@ -28,13 +28,13 @@ declare
             transaction := transaction || 'comment' /* comment here */ || chr(10);
             content := content || transaction;
         end loop;
-        content := content || 'T;' || (transaction_count - refunds_count) || ';' || refunds_count || chr(10);
+        content := content || 'T;' || to_char(transaction_count - refunds_count) || ';' || to_char(refunds_count) || chr(10);
         return content;
 
     end;
 
 begin
-    file_string := generate_file_content(100, 0);
-    dbms_output.put_line(file_string);
-    FS11_PROCESSING_INCOMING_FILE.FS11_PROC_FILE('stub', file_string);
+    file_string := generate_file_content(10000, 0);
+--     dbms_output.put(file_string);
+    FS11_PROCESSING_INCOMING_FILE.FS11_PROC_FILE(file_string);
 end;
