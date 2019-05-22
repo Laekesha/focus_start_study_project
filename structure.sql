@@ -36,7 +36,7 @@ create table fs11_clients (
     last_name  varchar2(200) not null,
     phone      number        not null
         constraint check_phone
-            check (phone like ('+7(%)%')), -- ?
+            check (phone like ('+7(%)%')), -- DON'T WORK!!!!!!!
     email      varchar2(100) not null
         constraint check_email
             check (email like ('%@%.%'))
@@ -63,7 +63,7 @@ create table fs11_purchases (
     transaction_amount number(10)    not null,
     merchant_id        varchar2(30)  not null,
     mcc                number(4),
-    comment_purchase   varchar2(200) default null
+    comment_purchase   varchar2(2000) default null
 );
 
 create table fs11_refunds (

@@ -152,14 +152,10 @@ create or replace package body fs11_processing_incoming_file as
     end;
 
     procedure fs11_proc_file(p_file_id varchar2) as
-    rc number;
     begin
         file_id := p_file_id;
         print('File ID: ' || file_id);
-        select count(*)/*file_content*/ into rc from FS11_FILE_CONTENT
-        where FS11_FILE_CONTENT.file_id = p_file_id;
 
-        print(rc);
         select file_content into file_content from FS11_FILE_CONTENT
         where FS11_FILE_CONTENT.file_id = p_file_id;
 

@@ -1,69 +1,103 @@
 declare
+    type client_records is table of FS11_CLIENTS%rowtype;
+    type card_records is table of FS11_CARDS%rowtype;
+    clients client_records := client_records();
+    cards   card_records   := card_records();
+    file_content clob;
+    file_id varchar2(200);
+
     procedure print(p_message varchar2) as
     begin
         dbms_output.put_line(p_message);
     end;
 
-    function random_string(lenght number) return varchar2
-        as 
-        begin 
-            return dbms_random.string('x', lenght);
-        end;
-
-     function random_number(upper_bound number) return number
-        as
-        begin
-            return trunc(dbms_random.value * upper_bound);
-        end;
-    
-    function generate_file_content(file_id varchar2, transaction_count number, refunds_count number) return clob as
-        content clob;
-        transaction varchar2(32767);
+    function random_string(length number) return varchar2
+    as
     begin
-        content := 'H;' || file_id || ';';
-        content := content || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
-        for void in 1 .. transaction_count - refunds_count
-        loop
-            transaction := 'P;' || random_string(40) || ';';
-            transaction := transaction || random_string(12) || ';';
-            transaction := transaction || to_char(sysdate, 'yyyymmddhh24miss') || ';';
-            transaction := transaction || random_number(9999999999) || ';';
-            transaction := transaction || random_string(30) || ';';
-            transaction := transaction || random_number(8999) + 1000  || ';';
-            transaction := transaction || random_string(random_number(2000)) || chr(10);
-            content := content || transaction;
-        end loop;
-        for void in 1 .. refunds_count
-        loop
-            transaction := 'R;' || random_string(40) || ';';
-            transaction := transaction || random_string(12) || ';';
-            transaction := transaction || to_char(sysdate, 'yyyymmddhh24miss') || ';';
-            transaction := transaction || random_number(9999999999) || ';';
-            transaction := transaction || random_string(30) || ';';
-            transaction := transaction || random_string(12) ||  ';';
-            transaction := transaction || random_string(random_number(2000))|| chr(10);
-            content := content || transaction;
-        end loop;
-        content := content || 'T;' || to_char(transaction_count - refunds_count) || ';' || to_char(refunds_count) || chr(10);
-        return content;
+        return dbms_random.string('x', length);
+    end;
 
+    function random_number(upper_bound number) return number
+    as
+    begin
+        return trunc(dbms_random.value * upper_bound); -- upper bound EXCLUSIVE
+    end;
+
+    function random_date return date
+    as
+        first_day date := trunc(sysdate, 'MONTH');
+    begin
+        return first_day + random_number(last_day(sysdate) - first_day + 1);
+    end;
+
+    procedure generate_file_content(file_id varchar2, per_card_transaction number, refunds_count number) as
+        transaction varchar2(32767);
+        purchases_count number := 0;
+    begin
+        file_content := 'H;' || file_id || ';';
+        file_content := file_content || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
+        for card_indx in 1 .. cards.count
+            loop
+                for void in 1 .. random_number(per_card_transaction)
+                    loop
+                        transaction := 'P;' || cards(card_indx).CARD_NUM || ';';
+                        transaction := transaction || random_string(12) || ';';
+                        transaction := transaction || to_char(random_date, 'yyyymmddhh24miss') || ';';
+                        transaction := transaction || random_number(9999999999) || ';';
+                        transaction := transaction || random_string(30) || ';';
+                        transaction := transaction || to_char(random_number(8999) + 1000)|| ';';
+                        transaction := transaction || random_string(random_number(2000)) || chr(10);
+                        file_content := file_content || transaction;
+                        purchases_count := purchases_count + 1;
+                    end loop;
+--                 for void in 1 .. refunds_count
+--                     loop
+--                         transaction := 'R;' || random_string(40) || ';';
+--                         transaction := transaction || random_string(12) || ';';
+--                         transaction := transaction || to_char(sysdate, 'yyyymmddhh24miss') || ';';
+--                         transaction := transaction || random_number(9999999999) || ';';
+--                         transaction := transaction || random_string(30) || ';';
+--                         transaction := transaction || random_string(12) || ';';
+--                         transaction := transaction || random_string(random_number(2000)) || chr(10);
+--                         content := content || transaction;
+--                     end loop;
+            end loop;
+        file_content := file_content || 'T;' || to_char(purchases_count) || ';' || to_char(refunds_count) ||
+                   chr(10);
+    end;
+
+    procedure trunc_transactions as
+    begin
+        execute immediate 'truncate table FS11_REFUNDS';
+        execute immediate 'alter table FS11_REFUNDS disable constraint FK_REFUNDS_TO_PURCHASES';
+        execute immediate 'truncate table FS11_PURCHASES';
+        execute immediate 'alter table FS11_REFUNDS enable constraint FK_REFUNDS_TO_PURCHASES';
+        print('FS11_PURCHASES and FS11_REFUNDS truncated');
+    end;
+
+    -- TODO:
+    procedure trunc_clients as
+    begin
+       null;
+    end;
+
+     -- TODO:
+    procedure trunc_cards as
+    begin
+       null;
     end;
 
     procedure trunc_file_tables as
     begin
+        execute immediate 'truncate table FS11_FILE_CONTENT';
         execute immediate 'alter table FS11_FILE_CONTENT disable constraint FK_FILE_CONTENT_TO_FILE_RECORDS';
         execute immediate 'truncate table FS11_FILE_RECORDS';
         execute immediate 'alter table FS11_FILE_CONTENT enable constraint FK_FILE_CONTENT_TO_FILE_RECORDS';
-        execute immediate 'truncate table FS11_FILE_CONTENT';
         print('FS11_FILE_CONTENT and FS11_FILE_RECORDS truncated');
     end;
 
-    procedure add_file as
-        file_content clob;
-        file_id     varchar2(12);
+    procedure insert_file_into_tables as
     begin
-        file_id := random_string(12);
-        file_content := generate_file_content(file_id, 10000, 0);
         insert into FS11_FILE_RECORDS values (file_id, 'file', sysdate, 'incoming', 'new', null);
         insert into FS11_FILE_CONTENT values (file_id, file_content);
         commit;
@@ -71,9 +105,9 @@ declare
 
     procedure proc_file_table as
     begin
-        FOR ids IN
+        for ids in
             (select file_id
-             FROM FS11_FILE_CONTENT
+             from FS11_FILE_CONTENT
                       natural join FS11_FILE_RECORDS
              where FILE_STATUS = 'new'
                and FILE_TYPE = 'incoming')
@@ -83,7 +117,77 @@ declare
             end loop;
     end;
 
+    procedure generate_clients(client_count number) as
+        client FS11_CLIENTS%rowtype;
+    begin
+        for void in 1 .. client_count
+            loop
+                client.CLIENT_ID := random_number(9999999);
+                client.FIRST_NAME := random_string(200);
+                client.LAST_NAME := random_string(200);
+                client.PHONE := random_number(9999999999) + 70000000000;
+                client.EMAIL := random_string(50) || '@' || random_string(10) || '.ru';
+                clients.extend;
+                clients(clients.last) := client;
+            end loop;
+    end;
+
+    procedure generate_cards(per_client_card_count number) as
+        card        FS11_CARDS%rowtype;
+        max_card_id number := 9999999 * per_client_card_count;
+    begin
+        for client_indx in 1 .. clients.count
+            loop
+                for card_indx in 1 .. random_number(per_client_card_count)
+                    loop
+                        card.CARD_ID := random_number(max_card_id);
+                        card.CARD_NUM := random_string(40);
+                        card.CLIENT_ID := clients(client_indx).CLIENT_ID;
+                        card.START_DATE := random_date;
+                        card.END_DATE := card.START_DATE + 365;
+                        card.STATUS := 'active';
+                        if card_indx = 1 then
+                            card.CARD_ROLE := 'master';
+                        else
+                            card.CARD_ROLE := 'slave';
+                        end if;
+                        cards.extend;
+                        cards(cards.last) := card;
+                    end loop;
+            end loop;
+    end;
+
+    procedure insert_clients_and_cards_into_tables as
+    begin
+        forall indx in 1..clients.count
+            insert into FS11_CLIENTS
+            values (clients(indx).CLIENT_ID,
+                    clients(indx).FIRST_NAME,
+                    clients(indx).LAST_NAME,
+                    clients(indx).PHONE,
+                    clients(indx).EMAIL);
+        forall indx in 1..cards.count
+            insert into FS11_CARDS
+            values (cards(indx).CARD_ID,
+                    cards(indx).CARD_NUM,
+                    cards(indx).CLIENT_ID,
+                    cards(indx).START_DATE,
+                    cards(indx).END_DATE,
+                    cards(indx).STATUS,
+                    cards(indx).CARD_ROLE);
+        commit;
+    end;
+
+
 begin
---     add_file;
+    trunc_transactions;
     trunc_file_tables;
+    file_id := random_string(12);
+    generate_clients(10);
+    generate_cards(per_client_card_count => 3);
+    insert_clients_and_cards_into_tables;
+    generate_file_content(file_id, per_card_transaction => 100, refunds_count =>  0);
+    insert_file_into_tables;
+    proc_file_table;
+
 end;
