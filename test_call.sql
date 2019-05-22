@@ -1,10 +1,9 @@
 declare
-    file_string clob;
-    function generate_file_content(transaction_count number, refunds_count number) return clob as
+    function generate_file_content(file_id varchar2, transaction_count number, refunds_count number) return clob as
         content clob;
         transaction varchar2(32767);
     begin
-        content := 'H;' || trunc(DBMS_RANDOM.VALUE * 999999999999)/*DBMS_RANDOM.STRING('x', 12)*/ || ';';
+        content := 'H;' || file_id || ';';
         content := content || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
         for void in 1 .. transaction_count - refunds_count
         loop
@@ -33,8 +32,25 @@ declare
 
     end;
 
+    procedure add_file as
+        file_content clob;
+        file_id     varchar2(12);
+    begin
+        file_id := DBMS_RANDOM.STRING('x', 12);
+        file_content := generate_file_content(file_id, 10000, 0);
+        insert into FS11_FILE_RECORDS values (file_id, 'file', sysdate, 'incoming', 'new', null);
+        insert into FS11_FILE_CONTENT values (file_id, file_content);
+        commit;
+    end;
+
 begin
-    file_string := generate_file_content(10000, 0);
---     dbms_output.put(file_string);
-    FS11_PROCESSING_INCOMING_FILE.FS11_PROC_FILE(file_string);
+--     add_file;
+    FOR ids IN
+        (select file_id FROM FS11_FILE_CONTENT
+         natural join FS11_FILE_RECORDS where FILE_STATUS = 'new' and FILE_TYPE = 'incoming')
+        loop
+            DBMS_OUTPUT.put_line('Process: ' || ids.FILE_ID);
+            FS11_PROCESSING_INCOMING_FILE.FS11_PROC_FILE(ids.FILE_ID);
+        end loop;
+--
 end;

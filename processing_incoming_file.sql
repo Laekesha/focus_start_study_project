@@ -4,7 +4,7 @@
 -- pls_integer for collection ?
 
 create or replace package fs11_processing_incoming_file as
-    procedure fs11_proc_file(p_file_string clob); -- point of entry
+    procedure fs11_proc_file(p_file_id varchar2); -- point of entry
 end fs11_processing_incoming_file;
 
 create or replace package body fs11_processing_incoming_file as
@@ -19,7 +19,7 @@ create or replace package body fs11_processing_incoming_file as
 
     file_length number;
     file_pos number;
-    file_string clob/*varchar2(32767)*/;
+    file_content clob;
     file_id varchar2(12);
 
     purchases_integrity exception;
@@ -46,13 +46,14 @@ create or replace package body fs11_processing_incoming_file as
 
     procedure fs11_proc_header as
     begin
-        file_id := array(2);
-        insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status)
-        values (file_id, 'not/need', to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
-        print('HEADER:');
-        fs11_print_array(array);
-    exception
-        when dup_val_on_index then raise file_id_exist;
+        null;
+--         file_id := array(2);
+--         insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status)
+--         values (file_id, 'not/need', to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
+--         print('HEADER:');
+--         fs11_print_array(array);
+--     exception
+--         when dup_val_on_index then raise file_id_exist;
     end;
 
     procedure fs11_proc_purchase as
@@ -110,39 +111,39 @@ create or replace package body fs11_processing_incoming_file as
         record_end_pos      number;
         record_field_number integer := 0;
     begin
-        record_end_pos := INSTR(file_string, chr(10), file_pos);
+        record_end_pos := INSTR(file_content, chr(10), file_pos);
         array.delete;
         -- if it is last record then we don't have delimiter after last field
         if record_end_pos = file_length then
             loop
-                delimiter_pos := INSTR(file_string, ';', file_pos);
+                delimiter_pos := INSTR(file_content, ';', file_pos);
                 record_field_number := record_field_number + 1;
                 array.extend;
                 -- resolve upper comment problem here
                 if delimiter_pos = 0 then
-                    array(record_field_number) := SUBSTR(file_string, file_pos, file_length - file_pos);
+                    array(record_field_number) := SUBSTR(file_content, file_pos, file_length - file_pos);
                     file_pos := file_length;
                     exit;
                 end if;
                 if delimiter_pos < record_end_pos then
-                    array(record_field_number) := SUBSTR(file_string, file_pos, delimiter_pos - file_pos);
+                    array(record_field_number) := SUBSTR(file_content, file_pos, delimiter_pos - file_pos);
                     file_pos := delimiter_pos + 1;
                 else
-                    array(record_field_number) := SUBSTR(file_string, file_pos, delimiter_pos - file_pos - 2);
+                    array(record_field_number) := SUBSTR(file_content, file_pos, delimiter_pos - file_pos - 2);
                     file_pos := delimiter_pos - 1;
                     exit;
                 end if;
             end loop;
         else
             loop
-                delimiter_pos := INSTR(file_string, ';', file_pos);
+                delimiter_pos := INSTR(file_content, ';', file_pos);
                 record_field_number := record_field_number + 1;
                 array.extend;
                 if delimiter_pos < record_end_pos then
-                    array(record_field_number) := SUBSTR(file_string, file_pos, delimiter_pos - file_pos);
+                    array(record_field_number) := SUBSTR(file_content, file_pos, delimiter_pos - file_pos);
                     file_pos := delimiter_pos + 1;
                 else
-                    array(record_field_number) := SUBSTR(file_string, file_pos, delimiter_pos - file_pos - 2);
+                    array(record_field_number) := SUBSTR(file_content, file_pos, delimiter_pos - file_pos - 2);
                     file_pos := delimiter_pos - 1;
                     exit;
                 end if;
@@ -150,13 +151,21 @@ create or replace package body fs11_processing_incoming_file as
         end if;
     end;
 
-    procedure fs11_proc_file(p_file_string clob) as
-
+    procedure fs11_proc_file(p_file_id varchar2) as
+    rc number;
     begin
-        file_string := p_file_string;
+        file_id := p_file_id;
+        print('File ID: ' || file_id);
+        select count(*)/*file_content*/ into rc from FS11_FILE_CONTENT
+        where FS11_FILE_CONTENT.file_id = p_file_id;
+
+        print(rc);
+        select file_content into file_content from FS11_FILE_CONTENT
+        where FS11_FILE_CONTENT.file_id = p_file_id;
+
         array := record_fields();
         file_pos := 1;
-        file_length := LENGTH(file_string);
+        file_length := LENGTH(file_content);
 
         purchases.delete;
         refunds.delete;
@@ -212,7 +221,7 @@ create or replace package body fs11_processing_incoming_file as
     print('Complete.');
 
     exception
-        when file_id_exist then error_log('This file identifier was used before.');
+--         when file_id_exist then error_log('This file identifier was used before.');
         when purchases_integrity then error_log('Error in the trailer. Number of purchases is wrong.');
         when refunds_integrity then error_log('Error in the trailer. Number of refunds is wrong');
         when trans_id_exist then error_log('This transaction identifier was used before.');

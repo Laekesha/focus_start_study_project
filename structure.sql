@@ -27,7 +27,7 @@ create table fs11_file_records (
 create table fs11_file_content (
     file_id      varchar2(12)        not null primary key,
         constraint fk_file_content_to_file_records foreign key (file_id) references fs11_file_records (file_id),
-    file_content varchar2(200) not null
+    file_content clob not null
 );
 /
 create table fs11_clients (
