@@ -14,6 +14,9 @@ create or replace package body fs11_processing_incoming_file as
     purchases purchases_records := purchases_records();
     refunds refunds_records := refunds_records();
 
+    type refund_amount_type is table of number index by VARCHAR2(12);
+    refund_amounts refund_amount_type;
+
     type record_fields is table of varchar2(2000); -- index by pls_integer;
     array record_fields := record_fields();
 
@@ -26,6 +29,8 @@ create or replace package body fs11_processing_incoming_file as
     refunds_integrity exception;
     file_id_exist exception;
     trans_id_exist exception;
+    refund_more_than_purschase exception;
+    pragma exception_init(refund_more_than_purschase, -20000);
 
     procedure print(p_message varchar2) as
     begin
@@ -47,8 +52,6 @@ create or replace package body fs11_processing_incoming_file as
     procedure proc_purchase as
         i number;
     begin
---         print('PURCHASE:');
---         fs11_print_array(array);
         purchases.extend;
         i := purchases.last;
         purchases(i).card_num := array(2);
@@ -61,10 +64,8 @@ create or replace package body fs11_processing_incoming_file as
     end;
 
     procedure fs11_proc_refund as
-    i number;
+        i number;
     begin
---         print('REFUND:');
---         fs11_print_array(array);
         refunds.extend;
         i := refunds.last;
         refunds(i).card_num := array(2);
@@ -74,6 +75,13 @@ create or replace package body fs11_processing_incoming_file as
         refunds(i).merchant_id := array(6);
         refunds(i).purchase_id := array(7);
         refunds(i).comment_refund := array(8);
+        if (refund_amounts.exists(refunds(i).purchase_id)) then
+            refund_amounts(refunds(i).purchase_id) := refund_amounts(refunds(i).purchase_id) + refunds(i).transaction_amount;
+        else
+            refund_amounts(refunds(i).purchase_id) := refunds(i).transaction_amount;
+        end if;
+
+
     end;
 
     procedure fs11_proc_trailer as
@@ -176,6 +184,16 @@ create or replace package body fs11_processing_incoming_file as
         end loop;
 
         begin
+            for indx in 1 .. purchases.COUNT
+                loop
+                    if refund_amounts.exists(purchases(indx).id) then
+                        if purchases(indx).TRANSACTION_AMOUNT - refund_amounts(purchases(indx).id) < 0 then
+                            raise_application_error(-20000, 'purchase_id = ' || purchases(indx).id);
+                        end if;
+                    end if;
+                end loop;
+
+
             forall indx in 1..purchases.count
                 insert into fs11_purchases
                 values purchases(indx);
@@ -197,6 +215,7 @@ create or replace package body fs11_processing_incoming_file as
         when purchases_integrity then error_log('Error in the trailer. Number of purchases is wrong.');
         when refunds_integrity then error_log('Error in the trailer. Number of refunds is wrong');
         when trans_id_exist then error_log('This transaction identifier was used before.');
+        when refund_more_than_purschase then error_log('refund_more_than_purschase ' || SQLERRM);
 
     end;
 
