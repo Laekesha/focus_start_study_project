@@ -4,7 +4,7 @@
 -- pls_integer for collection ?
 
 create or replace package fs11_processing_incoming_file as
-    procedure fs11_proc_file(p_file_id varchar2); -- point of entry
+    procedure fs11_proc_file(p_file_id varchar2);
 end fs11_processing_incoming_file;
 
 create or replace package body fs11_processing_incoming_file as
@@ -32,19 +32,7 @@ create or replace package body fs11_processing_incoming_file as
         dbms_output.put_line(p_message);
     end;
 
-    procedure fs11_print_array(p_parsed_array record_fields) as
-    begin
-        for i in 1..p_parsed_array.COUNT -- start from 2 to remove first litter constant field
-            loop
-                if p_parsed_array(i) is NULL then
-                    print('NULL');
-                else
-                    print(p_parsed_array(i));
-                end if;
-            end loop;
-    end;
-
-    procedure fs11_proc_header as
+    procedure proc_header as -- control of unique ?
     begin
         null;
 --         file_id := array(2);
@@ -56,7 +44,7 @@ create or replace package body fs11_processing_incoming_file as
 --         when dup_val_on_index then raise file_id_exist;
     end;
 
-    procedure fs11_proc_purchase as
+    procedure proc_purchase as
         i number;
     begin
 --         print('PURCHASE:');
@@ -172,9 +160,9 @@ create or replace package body fs11_processing_incoming_file as
             fs11_parse_record;
             case (array(1))
                 when 'H' then
-                    fs11_proc_header;
+                    proc_header;
                 when 'P' then
-                    fs11_proc_purchase;
+                    proc_purchase;
                 when 'R' then
                     fs11_proc_refund;
                 when 'T' then
@@ -190,23 +178,11 @@ create or replace package body fs11_processing_incoming_file as
         begin
             forall indx in 1..purchases.count
                 insert into fs11_purchases
-                values (purchases(indx).card_num,
-                        purchases(indx).id,
-                        purchases(indx).transaction_date,
-                        purchases(indx).transaction_amount,
-                        purchases(indx).merchant_id,
-                        purchases(indx).mcc,
-                        purchases(indx).comment_purchase);
+                values purchases(indx);
 
             forall indx in 1..refunds.count
                 insert into fs11_refunds
-                values (refunds(indx).card_num,
-                        refunds(indx).id,
-                        refunds(indx).transaction_date,
-                        refunds(indx).transaction_amount,
-                        refunds(indx).merchant_id,
-                        refunds(indx).purchase_id,
-                        refunds(indx).comment_refund);
+                values refunds(indx);
 
             commit;
 
