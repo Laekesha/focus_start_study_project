@@ -12,7 +12,7 @@ drop table fs11_periods;
 -- logging?
 
 create table fs11_file_records (
-    file_id       varchar2(12)       not null primary key,
+    file_id       varchar2(12)  not null primary key,
     file_name     varchar2(200) not null,
     file_date     date          not null,
     file_type     varchar2(8)   not null
@@ -30,16 +30,17 @@ create table fs11_file_content (
     file_content clob not null
 );
 /
-create table fs11_clients (
+create table fs11_clients
+(
     client_id  number        not null primary key,
     first_name varchar2(200) not null,
     last_name  varchar2(200) not null,
-    phone      number        not null
+    phone      varchar2(11)  not null
         constraint check_phone
-            check (phone like ('+7(%)%')), -- DON'T WORK!!!!!!!
+            check (phone like '7%' / '8%'), -- ?
     email      varchar2(100) not null
         constraint check_email
-            check (email like ('%@%.%'))
+            check (email like '%@%.%')
 );
 
 create table fs11_cards (
@@ -63,7 +64,7 @@ create table fs11_purchases (
     transaction_amount number(10)    not null,
     merchant_id        varchar2(30)  not null,
     mcc                number(4),
-    comment_purchase   varchar2(2000) default null
+    comment_purchase   varchar2(200) default null
 );
 
 create table fs11_refunds (
@@ -77,6 +78,7 @@ create table fs11_refunds (
         constraint fk_refunds_to_purchases  foreign key (purchase_id) references fs11_purchases (id), -- = fs11_purchases.id
     comment_refund     varchar2(2000) default null
 );
+
 
 
 /
