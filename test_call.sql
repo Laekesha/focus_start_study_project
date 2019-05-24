@@ -1,10 +1,14 @@
 declare
     type client_records is table of FS11_CLIENTS%rowtype;
     type card_records is table of FS11_CARDS%rowtype;
-    clients      client_records := client_records();
-    cards        card_records   := card_records();
+    clients      client_records   := client_records();
+    cards        card_records     := card_records();
     file_content clob;
     file_id      varchar2(200);
+    type merchant_records is table of FS11_MERCHANTS%rowtype;
+    merchants    merchant_records := merchant_records();
+    type mcc_records is table of FS11_MCC%rowtype;
+    mcc          mcc_records      := mcc_records();
 
     procedure print(p_message varchar2) as
     begin
@@ -54,7 +58,7 @@ declare
                 for void in 1 .. random_number(per_card_purchases)
                     loop
                         purchase_id := random_string(12);
-                        merchant_id := random_string(30);
+                        merchant_id := merchants(random_number(merchants.COUNT) + 1).MERCHANT_ID;
                         purchase_amount := random_number(1000) * 1000 + 1000;
                         purcahses_date := random_date;
                         transaction := 'P;' || cards(card_indx).CARD_NUM || ';';
@@ -62,7 +66,7 @@ declare
                         transaction := transaction || to_char(purcahses_date, 'yyyymmddhh24miss') || ';';
                         transaction := transaction || purchase_amount || ';';
                         transaction := transaction || merchant_id || ';';
-                        transaction := transaction || to_char(random_number(8999) + 1000) || ';';
+                        transaction := transaction || mcc(random_number(mcc.COUNT) + 1).MCC || ';';
                         transaction := transaction || random_string(random_number(200)) || chr(10); -- 2000 !!!!!!
                         file_content := file_content || transaction;
                         purchases_count := purchases_count + 1;
@@ -75,12 +79,12 @@ declare
                                 refund_amount := purchase_amount;
                                 for void IN 1 .. random_number(3) + 1 -- refunds parts
                                     loop
---                                         if refund_amount <= 0 then
---                                             exit;
---                                         end if;
+                                        if refund_amount <= 0 then -- comment for refunds error
+                                            exit; -- comment for refunds error
+                                        end if; -- comment for refunds error
                                         refund_parts.extend;
                                         refund_parts(refund_parts.last) := refund_amount * DBMS_RANDOM.value;
---                                         refund_amount := refund_amount - refund_parts(refund_parts.last);
+                                        refund_amount := refund_amount - refund_parts(refund_parts.last); -- comment for refunds error
                                     end loop;
                             end if;
                             for i IN refund_parts.first .. refund_parts.last
@@ -103,36 +107,6 @@ declare
             end loop;
         file_content := file_content || 'T;' || to_char(purchases_count) || ';' || to_char(refunds_count) ||
                         chr(10);
-    end;
-
-    procedure trunc_transactions as
-    begin
-        execute immediate 'truncate table FS11_REFUNDS';
-        execute immediate 'alter table FS11_REFUNDS disable constraint FK_REFUNDS_TO_PURCHASES';
-        execute immediate 'truncate table FS11_PURCHASES';
-        execute immediate 'alter table FS11_REFUNDS enable constraint FK_REFUNDS_TO_PURCHASES';
-        print('FS11_PURCHASES and FS11_REFUNDS truncated');
-    end;
-
-    -- TODO:
-    procedure trunc_clients as
-    begin
-        null;
-    end;
-
-    -- TODO:
-    procedure trunc_cards as
-    begin
-        null;
-    end;
-
-    procedure trunc_file_tables as
-    begin
-        execute immediate 'truncate table FS11_FILE_CONTENT';
-        execute immediate 'alter table FS11_FILE_CONTENT disable constraint FK_FILE_CONTENT_TO_FILE_RECORDS';
-        execute immediate 'truncate table FS11_FILE_RECORDS';
-        execute immediate 'alter table FS11_FILE_CONTENT enable constraint FK_FILE_CONTENT_TO_FILE_RECORDS';
-        print('FS11_FILE_CONTENT and FS11_FILE_RECORDS truncated');
     end;
 
     procedure insert_file_into_tables as
@@ -172,14 +146,12 @@ declare
     end;
 
     procedure generate_cards(per_client_card_count number) as
-        card        FS11_CARDS%rowtype;
-        max_card_id number := 9999999 * per_client_card_count;
+        card FS11_CARDS%rowtype;
     begin
         for client_indx in 1 .. clients.count
             loop
-                for card_indx in 1 .. random_number(per_client_card_count)
+                for card_indx in 1 .. random_number(per_client_card_count) + 1
                     loop
-                        card.CARD_ID := random_number(max_card_id);
                         card.CARD_NUM := random_string(40);
                         card.CLIENT_ID := clients(client_indx).CLIENT_ID;
                         card.START_DATE := random_date;
@@ -196,7 +168,7 @@ declare
             end loop;
     end;
 
-    procedure insert_clients_and_cards_into_tables as
+    procedure insert_into_tables as
     begin
         forall indx in 1 .. clients.count
             insert into FS11_CLIENTS
@@ -204,21 +176,231 @@ declare
         forall indx in 1..cards.count
             insert into FS11_CARDS
             values cards(indx);
+        forall indx in 1..merchants.count
+            insert into FS11_MERCHANTS
+            values merchants(indx);
+        forall indx in 1..mcc.count
+            insert into FS11_MCC
+            values mcc(indx);
         commit;
     end;
 
 
+    function generate_current_cashback_file return clob as
+        type card_cashback_table is table of integer index by varchar2 (40);
+        card_cashback          card_cashback_table;
+        type process_record is record (ID varchar2(12), CARD varchar2(40), AMOUNT number, MERCHANT number, MCC number);
+        type process_table is table of process_record;
+        processed_transactions process_table;
+        cashback               number;
+        response               clob;
+    begin
+        response := 'H;' || random_string(12) || ';' || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
+
+        select ID,
+               CARD,
+               AMOUNT,
+               MERCHANT,
+               MCC
+               bulk collect into processed_transactions
+        from (select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", mr.PERCENT_CASH "MERCHANT", mc.PERCENT_CASH "MCC"
+              from FS11_PURCHASES
+                       join FS11_MERCHANTS mr on FS11_PURCHASES.MERCHANT_ID = mr.MERCHANT_ID
+                       join FS11_MCC mc on FS11_PURCHASES.MCC = mc.MCC
+              union
+              select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", PERCENT_CASH "MERCHANT", null "MCC"
+              from FS11_REFUNDS
+                       join FS11_MERCHANTS on FS11_REFUNDS.MERCHANT_ID = FS11_MERCHANTS.MERCHANT_ID);
+
+        for i in 1 .. processed_transactions.COUNT
+            loop
+                if processed_transactions(i).MCC = 0 or processed_transactions(i).MERCHANT = 0
+                then
+                    cashback := 0;
+                else
+                    if processed_transactions(i).MERCHANT is not null
+                    then
+                        cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MERCHANT;
+                    else
+                        if processed_transactions(i).MCC is not null
+                        then
+                            cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MCC;
+                        else
+                            cashback := processed_transactions(i).AMOUNT * 0.01;
+                        end if;
+                    end if;
+                end if;
+                if (card_cashback.exists(processed_transactions(i).CARD)) then
+                    card_cashback(processed_transactions(i).CARD) :=
+                            card_cashback(processed_transactions(i).CARD) + cashback;
+                else
+                    card_cashback(processed_transactions(i).CARD) := cashback;
+                end if;
+
+                response := response || 'S;' ||
+                            processed_transactions(i).ID || ';' ||
+                            processed_transactions(i).CARD || ';' ||
+                            cashback || ';' ||
+                            card_cashback(processed_transactions(i).CARD) || chr(10);
+            end loop;
+        response := response ||
+                    'T;' || processed_transactions.COUNT || ';0' || chr(10);
+
+        return response;
+
+    end;
+
+
+    function generate_total_cashback_file return clob as
+        type client_cashback_table is table of integer index by pls_integer;
+        client_cashback        client_cashback_table;
+        type process_record is record (CLIENT_ID number, ID varchar2(12), CARD varchar2(40), AMOUNT number, MERCHANT number, MCC number);
+        type process_table is table of process_record;
+        processed_transactions process_table;
+        cashback               number;
+        response               clob;
+        client_id              number;
+        type card_record is record (CLIENT_ID number, MASTER_CARD varchar2(40));
+        type card_table is table of card_record;
+        master_cards           card_table;
+    begin
+        response := 'H;' || random_string(12) || ';' || to_char(sysdate, 'yyyymmddhh24miss') || ';' ||
+                    '201905' || chr(10); -- TODO Replace placeholder by date
+
+        select CLIENT_ID,
+               ID,
+               CARD,
+               AMOUNT,
+               MERCHANT,
+               MCC
+               bulk collect into processed_transactions
+        from (select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", mr.PERCENT_CASH "MERCHANT", mc.PERCENT_CASH "MCC"
+              from FS11_PURCHASES
+                       join FS11_MERCHANTS mr on FS11_PURCHASES.MERCHANT_ID = mr.MERCHANT_ID
+                       join FS11_MCC mc on FS11_PURCHASES.MCC = mc.MCC
+              union
+              select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", PERCENT_CASH "MERCHANT", null "MCC"
+              from FS11_REFUNDS
+                       join FS11_MERCHANTS on FS11_REFUNDS.MERCHANT_ID = FS11_MERCHANTS.MERCHANT_ID)
+                 join FS11_CARDS on CARD = FS11_CARDS.CARD_NUM;
+
+        for i in 1 .. processed_transactions.COUNT
+            loop
+                if processed_transactions(i).MCC = 0 or processed_transactions(i).MERCHANT = 0
+                then
+                    cashback := 0;
+                else
+                    if processed_transactions(i).MERCHANT is not null
+                    then
+                        cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MERCHANT;
+                    else
+                        if processed_transactions(i).MCC is not null
+                        then
+                            cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MCC;
+                        else
+                            cashback := processed_transactions(i).AMOUNT * 0.01;
+                        end if;
+                    end if;
+                end if;
+                if (client_cashback.exists(processed_transactions(i).CLIENT_ID)) then
+                    client_cashback(processed_transactions(i).CLIENT_ID) :=
+                            client_cashback(processed_transactions(i).CLIENT_ID) + cashback;
+                else
+                    client_cashback(processed_transactions(i).CLIENT_ID) := cashback;
+                end if;
+            end loop;
+
+        select CLIENT_ID,
+               CARD_NUM "MASTER_CARD"
+               bulk collect into master_cards
+        from FS11_CARDS
+        where CARD_ROLE = 'master';
+
+
+        for i in 1 .. master_cards.COUNT
+            loop
+                if (client_cashback.exists(master_cards(i).CLIENT_ID)) then
+                    response := response || 'C;' ||
+                                master_cards(i).MASTER_CARD || ';' ||
+                                client_cashback(master_cards(i).CLIENT_ID) || chr(10);
+                end if;
+            end loop;
+
+        response := response ||
+                    'T;' || client_cashback.COUNT || chr(10);
+
+        return response;
+
+    end;
+
+    procedure generate_merchants(merch_count number) as
+    begin
+        for i in 1 .. merch_count
+            loop
+                merchants.extend;
+                merchants(merchants.LAST).MERCHANT_ID := random_string(30);
+                merchants(merchants.LAST).PERCENT_CASH := random_number(12) / 100;
+                if merchants(merchants.LAST).PERCENT_CASH = 0.11 then
+                    merchants(merchants.LAST).PERCENT_CASH := NULL;
+                end if;
+            end loop;
+    end;
+
+    procedure generate_MCC(MCC_count number) as
+    begin
+        for i in 1 .. MCC_count
+            loop
+                mcc.extend;
+                mcc(mcc.LAST).MCC := 1000 + i;
+                mcc(mcc.LAST).PERCENT_CASH := random_number(12) / 100;
+                if mcc(mcc.LAST).PERCENT_CASH = 0.11 then
+                    mcc(mcc.LAST).PERCENT_CASH := NULL;
+                end if;
+            end loop;
+    end;
+
+    procedure trunc_tables as
+    begin
+        for tc in (select constraint_name, table_name
+                   from user_constraints
+                   where table_name like 'FS11_%'
+                     and constraint_type = 'R')
+            loop
+                --             print(tc.table_name || ' ' || tc.constraint_name);
+                execute immediate 'alter table ' || tc.table_name || ' disable constraint ' || tc.constraint_name;
+            end loop;
+
+        for tc in (select table_name
+                   from user_constraints
+                   where table_name like 'FS11_%')
+            loop
+                execute immediate 'truncate table ' || tc.table_name;
+            end loop;
+
+        for tc in (select constraint_name, table_name
+                   from user_constraints
+                   where table_name like 'FS11_%'
+                     and constraint_type = 'R')
+            loop
+                execute immediate 'alter table ' || tc.table_name || ' enable constraint ' || tc.constraint_name;
+            end loop;
+        print('All tables truncated');
+    end;
+
 begin
-    trunc_transactions;
-    trunc_file_tables;
+    print(generate_current_cashback_file);
+    print(generate_total_cashback_file);
+    return;
+
+    trunc_tables;
+
     file_id := random_string(12);
-    generate_clients(20);
+    generate_MCC(500);
+    generate_merchants(100);
+    generate_clients(10);
     generate_cards(per_client_card_count => 3);
-    insert_clients_and_cards_into_tables;
-    generate_file_content(file_id, per_card_purchases => 100);
+    insert_into_tables;
+    generate_file_content(file_id, per_card_purchases => 10);
     insert_file_into_tables;
     proc_file_table;
---     print(file_content);
 end;
-
--- https://asktom.oracle.com/pls/apex/f?p=100:11:0::::P11_QUESTION_ID:774225935270
