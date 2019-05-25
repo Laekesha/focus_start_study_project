@@ -4,6 +4,7 @@ drop table fs11_file_records;
 drop table fs11_refunds;
 drop table fs11_purchases;
 
+drop table fs11_card_cashbacks;
 drop table fs11_cards;
 drop table fs11_clients;
 
@@ -15,6 +16,35 @@ drop table fs11_merchants;
 drop table fs11_periods;
 
 -- logging?
+
+-- drop table FS11_TRANSACTION_TEMP;
+-- create table FS11_TRANSACTION_TEMP (
+--     transaction_type   varchar2(1),
+--     card_num           varchar2(40),
+--     id                 varchar2(12),
+--     transaction_date   date ,
+--     transaction_amount number(10),
+--     merchant_id        varchar2(30),
+--     common              varchar2(12),
+--     comment_purchase   varchar2(2000)
+-- );
+
+
+drop type transaction_table;
+drop type transaction_type;
+
+create type transaction_type is object (
+    transaction_type   varchar2(1),
+    card_num           varchar2(40),
+    id                 varchar2(12),
+    transaction_date   date ,
+    transaction_amount number(10),
+    merchant_id        varchar2(30),
+    common              varchar2(12),
+    comment_purchase   varchar2(2000)
+);
+
+create type transaction_table is table of transaction_type;
 
 create table fs11_file_records (
     file_id       varchar2(12)  not null primary key, -- internal or supernumerary?
@@ -123,20 +153,18 @@ create table fs11_refunds (
 -- percent_cash default null fk with merch & mcc (?)
 
 create table fs11_periods (
-    period_id     number, -- primary key,
-    period_date   timestamp,
+    period_id     number    primary key,
+    period_date   date,
     period_status varchar2(7) not null
-        constraint check_period_status check (period_status in ('current', 'report')),
-    calc_cashback number  --
+        constraint check_period_status check (period_status in ('current', 'report'))
 );
 
 create table fs11_card_cashbacks (
-    period_id         number, -- primary key,
-    period_status     varchar2(7) not null
-        constraint check_period_status check (period_status in ('current', 'report')),
+    -- timestamp    timestamp,
+    period_id         number,
     card_num          varchar2(12),
-    constraint fk_card_cashbacks_to_cards foreign key (card_num) references fs11_cards (card_num),
-    transaction_count number, -- <= 10
+        constraint fk_card_cashbacks_to_cards foreign key (card_num) references fs11_cards (card_num),
+    purchases_count   number, -- <= 10
     calc_cashback     number  -- <= 100
 );
 

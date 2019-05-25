@@ -1,4 +1,11 @@
 declare
+    type mcc_rules_table is table of FS11_MCC_RULES%rowtype;
+    mcc_rules mcc_rules_table := mcc_rules_table();
+
+    type merchant_rules_table is table of FS11_MERCHANT_RULES%rowtype;
+    merchant_rules merchant_rules_table :=  merchant_rules_table();
+
+
     type client_records is table of FS11_CLIENTS%rowtype;
     type card_records is table of FS11_CARDS%rowtype;
     clients      client_records   := client_records();
@@ -48,22 +55,25 @@ declare
         purchase_id     varchar2(12);
         merchant_id     varchar2(30);
         purchase_amount varchar2(30);
-        purcahses_date  date;
+--         purcahses_date  date;
         refund_amount   number;
+        transaction_date date;
     begin
+        transaction_date := trunc(sysdate) - 10;
         file_content := 'H;' || file_id || ';';
         file_content := file_content || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
         for card_indx in 1 .. cards.count
             loop
                 for void in 1 .. random_number(per_card_purchases)
                     loop
+                        transaction_date := transaction_date + 1/24;
                         purchase_id := random_string(12);
                         merchant_id := merchants(random_number(merchants.COUNT) + 1).MERCHANT_ID;
                         purchase_amount := random_number(1000) * 1000 + 1000;
-                        purcahses_date := random_date;
+--                         purcahses_date := transaction_date;
                         transaction := 'P;' || cards(card_indx).CARD_NUM || ';';
                         transaction := transaction || purchase_id || ';';
-                        transaction := transaction || to_char(purcahses_date, 'yyyymmddhh24miss') || ';';
+                        transaction := transaction || to_char(transaction_date, 'yyyymmddhh24miss') || ';';
                         transaction := transaction || purchase_amount || ';';
                         transaction := transaction || merchant_id || ';';
                         transaction := transaction || mcc(random_number(mcc.COUNT) + 1).MCC || ';';
@@ -71,6 +81,7 @@ declare
                         file_content := file_content || transaction;
                         purchases_count := purchases_count + 1;
                         if DBMS_RANDOM.value < 0.1 then -- refund probability
+                            transaction_date := transaction_date + 1;
                             refund_parts.delete;
                             if DBMS_RANDOM.value < 0.9 then -- full refund probability
                                 refund_parts.extend;
@@ -92,7 +103,7 @@ declare
                                     transaction := 'R;' || cards(card_indx).CARD_NUM || ';';
                                     transaction := transaction || random_string(12) || ';';
                                     transaction := transaction ||
-                                                   to_char(purcahses_date + random_number(7), 'yyyymmddhh24miss') ||
+                                                   to_char(transaction_date, 'yyyymmddhh24miss') ||
                                                    ';';
                                     transaction := transaction || refund_parts(i) || ';';
                                     transaction := transaction || merchant_id || ';';
@@ -182,11 +193,16 @@ declare
         forall indx in 1..mcc.count
             insert into FS11_MCC
             values mcc(indx);
+        forall indx in 1..mcc_rules.count
+            insert into FS11_MCC_RULES
+            values mcc_rules(indx);
+        forall indx in 1..merchant_rules.count
+            insert into FS11_MERCHANT_RULES
+            values merchant_rules(indx);
         commit;
     end;
 
-
-    function generate_current_cashback_file return clob as
+   /* function generate_current_cashback_file return clob as
         type card_cashback_table is table of integer index by varchar2 (40);
         card_cashback          card_cashback_table;
         type process_record is record (ID varchar2(12), CARD varchar2(40), AMOUNT number, MERCHANT number, MCC number);
@@ -249,7 +265,6 @@ declare
         return response;
 
     end;
-
 
     function generate_total_cashback_file return clob as
         type client_cashback_table is table of integer index by pls_integer;
@@ -332,17 +347,13 @@ declare
         return response;
 
     end;
-
+*/
     procedure generate_merchants(merch_count number) as
     begin
         for i in 1 .. merch_count
             loop
                 merchants.extend;
                 merchants(merchants.LAST).MERCHANT_ID := random_string(30);
-                merchants(merchants.LAST).PERCENT_CASH := random_number(12) / 100;
-                if merchants(merchants.LAST).PERCENT_CASH = 0.11 then
-                    merchants(merchants.LAST).PERCENT_CASH := NULL;
-                end if;
             end loop;
     end;
 
@@ -352,15 +363,12 @@ declare
             loop
                 mcc.extend;
                 mcc(mcc.LAST).MCC := 1000 + i;
-                mcc(mcc.LAST).PERCENT_CASH := random_number(12) / 100;
-                if mcc(mcc.LAST).PERCENT_CASH = 0.11 then
-                    mcc(mcc.LAST).PERCENT_CASH := NULL;
-                end if;
             end loop;
     end;
 
     procedure trunc_tables as
     begin
+        execute immediate 'truncate table FS11_TRANSACTION_TEMP';
         for tc in (select constraint_name, table_name
                    from user_constraints
                    where table_name like 'FS11_%'
@@ -387,16 +395,44 @@ declare
         print('All tables truncated');
     end;
 
+    procedure generate_rules as
+    begin
+        for i in 1 .. MCC.COUNT
+            loop
+                mcc_rules.extend;
+                mcc_rules(i).MCC := MCC(i).MCC;
+                mcc_rules(i).START_DATE := sysdate - 30;
+                mcc_rules(i).END_DATE := sysdate + 30;
+                mcc_rules(i).PERCENT_CASH := random_number(12) / 100;
+                if mcc_rules(i).PERCENT_CASH = 0.11 then
+                    mcc_rules(i).PERCENT_CASH := NULL;
+                end if;
+            end loop;
+        for i in 1 .. merchants.COUNT
+            loop
+                merchant_rules.extend;
+                merchant_rules(i).MERCHANT_ID := merchants(i).MERCHANT_ID;
+                merchant_rules(i).START_DATE := sysdate - 30;
+                merchant_rules(i).END_DATE := sysdate + 30;
+                merchant_rules(i).PERCENT_CASH := random_number(12) / 100;
+                if merchant_rules(i).PERCENT_CASH = 0.11 then
+                    merchant_rules(i).PERCENT_CASH := NULL;
+                end if;
+            end loop;
+    end;
+
+
 begin
-    print(generate_current_cashback_file);
-    print(generate_total_cashback_file);
-    return;
+--     print(generate_current_cashback_file);
+--     print(generate_total_cashback_file);
+--     return;
 
     trunc_tables;
 
     file_id := random_string(12);
     generate_MCC(500);
     generate_merchants(100);
+    generate_rules;
     generate_clients(10);
     generate_cards(per_client_card_count => 3);
     insert_into_tables;
