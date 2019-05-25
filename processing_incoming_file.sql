@@ -81,7 +81,6 @@ create or replace package body fs11_processing_incoming_file as
             refund_amounts(refunds(i).purchase_id) := refunds(i).transaction_amount;
         end if;
 
-
     end;
 
     procedure fs11_proc_trailer as
