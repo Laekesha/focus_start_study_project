@@ -7,7 +7,9 @@ drop table fs11_purchases;
 drop table fs11_cards;
 drop table fs11_clients;
 
+drop table fs11_mcc_rules;
 drop table fs11_mcc;
+drop table fs11_merchant_rules;
 drop table fs11_merchants;
 
 drop table fs11_periods;
@@ -58,17 +60,39 @@ create table fs11_cards (
 /
 -- calc_rules (in order): exception list 0%, special list 0-10%, default list 1%
 -- add attribute period_id?
+
+-- not realized
 create table fs11_mcc (
-       mcc number(4) not null primary key,
+       mcc number(4) primary key
+       --mcc_name varchar(200)
+       );
+
+create table fs11_mcc_rules (
+       mcc number(4) primary key,
+        constraint fk_mcc_rules_to_mcc foreign key (mcc) references fs11_mcc (mcc),
+       --period_id (?)
+       --percent_cash number default null (?)
+       start_date date default null,
+       end_date date default null,
        percent_cash number default null
        );
 
 create table fs11_merchants (
+       merchant_id varchar2(30) primary key
+       --merchant_name varchar2(200)
+       );
+
+create table fs11_merchant_rules (
        merchant_id varchar2(30) primary key,
-       -- merchant_name varchar2(200) not null,
+        constraint fk_merchants_rules_to_merchants foreign key (merchant_id) references fs11_merchants (merchant_id),
+       --period_id (?)
+       --percent_cash number default null (?)
+       start_date date default null,
+       end_date date default null,
        percent_cash number default null
        );
 /
+-- sections for dates!
 create table fs11_purchases (
     card_num           varchar2(40)  not null,
         constraint fk_purchases_to_cards foreign key (card_num) references fs11_cards (card_num),
@@ -81,7 +105,7 @@ create table fs11_purchases (
         constraint fk_purchases_to_mcc  foreign key (mcc) references fs11_mcc (mcc),
     comment_purchase   varchar2(2000) default null
 );
-
+-- sections for dates!
 create table fs11_refunds (
     card_num           varchar2(40)   not null,
          constraint fk_refunds_to_cards foreign key (card_num) references fs11_cards (card_num),
