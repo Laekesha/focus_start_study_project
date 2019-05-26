@@ -1,37 +1,22 @@
-drop table fs11_file_content;
-drop table fs11_file_records;
-
-drop table fs11_refunds;
-drop table fs11_purchases;
-
-drop table fs11_card_cashbacks;
-drop table fs11_cards;
-drop table fs11_clients;
-
-drop table fs11_mcc_rules;
-drop table fs11_mcc;
-drop table fs11_merchant_rules;
-drop table fs11_merchants;
-
-drop table fs11_periods;
-
--- logging?
-
--- drop table FS11_TRANSACTION_TEMP;
--- create table FS11_TRANSACTION_TEMP (
---     transaction_type   varchar2(1),
---     card_num           varchar2(40),
---     id                 varchar2(12),
---     transaction_date   date ,
---     transaction_amount number(10),
---     merchant_id        varchar2(30),
---     common              varchar2(12),
---     comment_purchase   varchar2(2000)
--- );
-
-
-drop type transaction_table;
-drop type transaction_type;
+-- drop table fs11_file_content;
+-- drop table fs11_file_records;
+--
+-- drop table fs11_refunds;
+-- drop table fs11_purchases;
+--
+-- drop table fs11_card_cashbacks;
+-- drop table fs11_cards;
+-- drop table fs11_clients;
+--
+-- drop table fs11_mcc_rules;
+-- drop table fs11_mcc;
+-- drop table fs11_merchant_rules;
+-- drop table fs11_merchants;
+--
+-- drop table fs11_periods;
+--
+-- drop type transaction_table;
+-- drop type transaction_type;
 
 create type transaction_type is object (
     transaction_type   varchar2(1),
@@ -58,7 +43,7 @@ create table fs11_file_records (
 
 create table fs11_file_content (
     file_id      varchar2(12)        not null primary key, -- supernumerary
-        constraint fk_file_content_to_file_records foreign key (file_id) references fs11_file_records (file_id),
+        constraint fk_content_to_records foreign key (file_id) references fs11_file_records (file_id),
     file_content clob not null -- that's what we parse
 );
 /
@@ -114,7 +99,7 @@ create table fs11_merchants (
 
 create table fs11_merchant_rules (
        merchant_id varchar2(30) primary key,
-        constraint fk_merchants_rules_to_merchants foreign key (merchant_id) references fs11_merchants (merchant_id),
+        constraint fk_rules_to_merchants foreign key (merchant_id) references fs11_merchants (merchant_id),
        --period_id (?)
        --percent_cash number default null (?)
        start_date date default null,
@@ -160,21 +145,10 @@ create table fs11_periods (
 );
 
 create table fs11_card_cashbacks (
-    -- timestamp    timestamp,
-    period_id         number,
-    card_num          varchar2(12),
+    file_date         date not null,
+    period_id         number not null,
+    card_num          varchar2(40) not null,
         constraint fk_card_cashbacks_to_cards foreign key (card_num) references fs11_cards (card_num),
-    purchases_count   number, -- <= 10
-    calc_cashback     number  -- <= 100
+    purchases_count   number not null,
+    calc_cashback     number not null
 );
-
-/*
-    /*
-    client_id not null,
-        constraint fk_periods_to_clients foreign key (client_id) references fs11_clients (client_id), */
-    /*
-period_form varchar2() not null
-        constraint check_period_form check (period_form in ('unloaded', '')), --check current or report
-! catalogue for own codes of errors
-
- */

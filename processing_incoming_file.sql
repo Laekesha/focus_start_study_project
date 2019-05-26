@@ -3,28 +3,12 @@ create or replace package fs11_processing_incoming_file as
 end fs11_processing_incoming_file;
 
 create or replace package body fs11_processing_incoming_file as
-    --     subtype merchant is varchar2(30);
-    period_date date;
-    file_date date;
 
-    type mcc_rules_table is table of FS11_MCC_RULES%rowtype;
-    mcc_rules mcc_rules_table := mcc_rules_table();
-
-    type merchant_rules_table is table of FS11_MERCHANT_RULES%rowtype;
-    merchant_rules merchant_rules_table := merchant_rules_table();
-
-
---     type purchases_records is table of fs11_purchases%rowtype;
-    type refunds_records is table of fs11_refunds%rowtype;
---     purchases purchases_records := purchases_records();
---     purchases TRANSACTION_TABLE;
     transactions TRANSACTION_TABLE;
-    refunds refunds_records := refunds_records();
+    purchase_count number;
+    refund_count number;
 
-    type refund_amount_type is table of number index by VARCHAR2 (12);
-    refund_amounts refund_amount_type;
-
-    type record_fields is table of varchar2(2000); -- index by pls_integer;
+    type record_fields is table of varchar2(2000);
     array record_fields := record_fields();
 
     file_length number;
@@ -32,13 +16,28 @@ create or replace package body fs11_processing_incoming_file as
     file_content clob;
     file_id varchar2(12);
 
+    current_period_date date;
+    file_date date;
+    current_period_id number;
+
+    type card_cashback_calc_record is record
+        (card_num varchar2(40), purchases_count number, calc_cashback number);
+    type card_cashback_calc_table is table of card_cashback_calc_record index by varchar2 (40);
+
+    type client_cashback_calc_record is record
+        (client_id number, transaction_count number, cashback number);
+    type clients_cashback_calc_table is table of client_cashback_calc_record index by pls_integer;
+
+    cards card_cashback_calc_table;
+    clients clients_cashback_calc_table;
+
     purchases_integrity exception;
     refunds_integrity exception;
     file_id_exist exception;
     trans_id_exist exception;
-    refund_more_than_purschase exception;
-    pragma exception_init (refund_more_than_purschase, -20000);
-    transaction_wrong_date exception;
+--     refund_more_than_purschase exception;
+--     pragma exception_init (refund_more_than_purschase, -20000);
+--     transaction_wrong_date exception;
 
     procedure print(p_message varchar2) as
     begin
@@ -53,7 +52,6 @@ create or replace package body fs11_processing_incoming_file as
     procedure proc_header as -- control of unique ?
     begin
         file_date := to_date(array(3), 'yyyymmddhh24miss');
-        --         load_rules;
 --         file_id := array(2);
 --         insert into FS11_FILE_RECORDS (file_id, file_name, file_date, file_type, file_status)
 --         values (file_id, 'not/need', to_date(array(3), 'yyyymmddhh24miss'), 'incoming', 'new');
@@ -61,40 +59,6 @@ create or replace package body fs11_processing_incoming_file as
 --         fs11_print_array(array);
 --     exception
 --         when dup_val_on_index then raise file_id_exist;
-    end;
-
-    procedure proc_purchase as
-        i number;
-    begin
-        -- todo rise cast exception
---         purchases.extend;
---         i := purchases.last;
---         purchases(i).card_num := array(2);
---         purchases(i).id := array(3);
---         purchases(i).transaction_date := to_date(array(4), 'yyyymmddhh24miss');
---         purchases(i).transaction_amount := to_number(array(5));
---         purchases(i).merchant_id := array(6);
---         purchases(i).mcc := to_number(array(7), '9999');
---         purchases(i).comment_purchase := array(8);
-
-        null;
-
-        --             transactions.extend;
---             transactions(transactions.last) := TRANSACTION_TYPE(
---                 array(1),
---                 array(2),
---                 array(3),
---                 to_date(array(4), 'yyyymmddhh24miss'),
---                 to_number(array(5)),
---                 array(6),
---                 array(7),
---                 array(8)
---             );
-
---         if purchases(i).transaction_date not between period_date and file_date then
---             -- TODO Write error records
---             raise transaction_wrong_date;
---         end if;
     end;
 
     procedure proc_transaction as
@@ -111,53 +75,22 @@ create or replace package body fs11_processing_incoming_file as
                 array(7),
                 array(8)
             );
-
-        --         if purchases(i).transaction_date not between period_date and file_date then
-        --             -- TODO Write error records
-        --             raise transaction_wrong_date;
-        --         end if;
-    end;
-
-
-    procedure fs11_proc_refund as
-        i number;
-    begin
-        -- todo rise cast exception
---         refunds.extend;
---         i := refunds.last;
---         refunds(i).card_num := array(2);
---         refunds(i).id := array(3);
---         refunds(i).transaction_date := to_date(array(4), 'yyyymmddhh24miss');
---         refunds(i).transaction_amount := to_number(array(5));
---         refunds(i).merchant_id := array(6);
---         refunds(i).purchase_id := array(7);
---         refunds(i).comment_refund := array(8);
-
---          if refunds(i).transaction_date not between period_date and file_date then
---             -- TODO Write error records
+--         if transactions(transactions.last).TRANSACTION_DATE not between current_period_date and file_date then
 --             raise transaction_wrong_date;
 --         end if;
-
-        if (refund_amounts.exists(refunds(i).purchase_id)) then
-            refund_amounts(refunds(i).purchase_id) :=
-                        refund_amounts(refunds(i).purchase_id) + refunds(i).transaction_amount;
-        else
-            refund_amounts(refunds(i).purchase_id) := refunds(i).transaction_amount;
-        end if;
-
     end;
 
---     procedure fs11_proc_trailer as
---     begin
---         print('Trailer purchases: ' || array(2) || ' purchase_record_collection.count: ' || purchases.count);
---         print('Trailer refunds: ' || array(3));
---         if purchases.count <> to_number(array(2)) then
---             raise purchases_integrity;
---         end if;
---         if refunds.count <> to_number(array(3)) then
---             raise refunds_integrity;
---         end if;
---     end;
+    procedure fs11_proc_trailer as
+    begin
+        select count(*) into purchase_count from table(transactions) where TRANSACTION_TYPE = 'P';
+        select count(*) into refund_count from table(transactions) where TRANSACTION_TYPE = 'R';
+        if purchase_count <> to_number(array(2)) then
+            raise purchases_integrity;
+        end if;
+        if refund_count <> to_number(array(3)) then
+            raise refunds_integrity;
+        end if;
+    end;
 
     procedure error_log(p_message varchar2) as
     begin
@@ -210,25 +143,103 @@ create or replace package body fs11_processing_incoming_file as
         end if;
     end;
 
-    procedure load_rules as
+    procedure read_cards_cashback as
+        type read_card_table is table of card_cashback_calc_record;
+        read_cards read_card_table;
     begin
-        select * bulk collect into mcc_rules
-        from FS11_MCC_RULES
-        where START_DATE <= file_date
-          and period_date < END_DATE;
-        select * bulk collect into merchant_rules
-        from FS11_MERCHANT_RULES
-        where START_DATE <= file_date
-          and period_date < END_DATE;
+        select tr.CARD_NUM "CARD",
+               (case
+                    WHEN sum(PURCHASES_COUNT) IS NULL
+                        THEN 0
+                    ELSE sum(PURCHASES_COUNT)
+                   END)    "PURCHASES",
+               (case
+                    WHEN sum(CALC_CASHBACK) IS NULL
+                        THEN 0
+                    ELSE sum(CALC_CASHBACK)
+                   END)    "CASHBACK"
+               bulk collect into read_cards
+        from FS11_CARD_CASHBACKS cash
+                 right join (
+            select distinct CARD_NUM
+            from table (transactions)) tr on
+            cash.CARD_NUM = tr.CARD_NUM
+        where PERIOD_ID = 201905
+           or PERIOD_ID is null
+        group by tr.CARD_NUM;
+
+        for i in 1 .. read_cards.count
+            loop
+                cards(read_cards(i).card_num) := read_cards(i);
+            end loop;
     end;
 
-    procedure process_records as
-        type client_type is record (cashback number, transaction_count number);
-        type clients_table is table of client_type index by pls_integer;
-        clients      clients_table;
-        cashback number;
-        response     clob;
+    procedure read_clients_cashback as
+        type read_client_table is table of client_cashback_calc_record;
+        read_clients read_client_table;
     begin
+        select CLIENT_ID,
+               (case
+                    WHEN sum(PURCHASES_COUNT) IS NULL
+                        THEN 0
+                    ELSE sum(PURCHASES_COUNT)
+                   END) "PURCHASES",
+               (case
+                    WHEN sum(CALC_CASHBACK) IS NULL
+                        THEN 0
+                    ELSE sum(CALC_CASHBACK)
+                   END) "CASHBACK"
+               bulk collect into read_clients
+        from FS11_CARD_CASHBACKS cash
+                 right join (
+            select distinct CARD_NUM
+            from table (transactions)) tr on
+            tr.CARD_NUM = cash.CARD_NUM
+                 join FS11_CARDS cards on tr.CARD_NUM = cards.CARD_NUM
+        where PERIOD_ID = 201905
+           or PERIOD_ID is null
+        group by CLIENT_ID;
+
+        for i in 1 .. read_clients.count
+            loop
+                clients(read_clients(i).client_id) := read_clients(i);
+            end loop;
+    end;
+
+    procedure write_cards_cashback as
+
+        type write_table is table of FS11_CARD_CASHBACKS%rowtype;
+        write_cards write_table := write_table();
+        idx         varchar2(40);
+        i           number;
+    begin
+
+        idx := cards.first;
+        while (idx is not null)
+            loop
+                write_cards.extend;
+                i := write_cards.last;
+                write_cards(i).FILE_DATE := file_date;
+                write_cards(i).PERIOD_ID := current_period_id;
+                write_cards(i).CARD_NUM := cards(idx).card_num;
+                write_cards(i).PURCHASES_COUNT := cards(idx).purchases_count;
+                write_cards(i).CALC_CASHBACK := cards(idx).calc_cashback;
+                idx := cards.next(idx);
+            end loop;
+
+        forall i in 1 .. write_cards.count
+            insert into FS11_CARD_CASHBACKS
+            values write_cards(i);
+        --commit;
+    end;
+
+    procedure process_transactions as
+        cashback          number;
+        cashback_response number;
+        response          clob;
+    begin
+        read_cards_cashback();
+        read_clients_cashback();
 
         response := 'H;123456789012;' || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
 
@@ -253,7 +264,7 @@ create or replace package body fs11_processing_incoming_file as
                   union
 
                   select ID,
-                         REFUND_DATE "TRANSACTION_DATE",
+                         REFUND_DATE          "TRANSACTION_DATE",
                          CLIENT_ID,
                          FS11_CARDS.CARD_NUM  "CARD",
                          -TRANSACTION_AMOUNT  "AMOUNT",
@@ -262,11 +273,11 @@ create or replace package body fs11_processing_incoming_file as
                   from (select t1.ID,
                                t1.TRANSACTION_TYPE,
                                t1.TRANSACTION_DATE "REFUND_DATE",
-                                t2.TRANSACTION_DATE "PURCHASE_DATE",
+                               t2.TRANSACTION_DATE "PURCHASE_DATE",
                                t1.TRANSACTION_AMOUNT,
-                               t1.CARD_NUM    "CARD",
-                               t2.COMMON      "PURCHASE_MCC",
-                               t2.MERCHANT_ID "PURCHASE_MERCHANT"
+                               t1.CARD_NUM         "CARD",
+                               t2.COMMON           "PURCHASE_MCC",
+                               t2.MERCHANT_ID      "PURCHASE_MERCHANT"
                         from table (transactions) t1,
                              table (transactions) t2
                         where t1.TRANSACTION_TYPE = 'R'
@@ -299,50 +310,79 @@ create or replace package body fs11_processing_incoming_file as
                     end if;
                 end if;
 
-                if (clients.exists(r.CLIENT_ID)) then
-                    clients(r.CLIENT_ID).cashback := clients(r.CLIENT_ID).cashback + cashback;
+                cards(r.CARD).calc_cashback := cards(r.CARD).calc_cashback + cashback;
+                if cashback > 0 then
+                    cards(r.CARD).purchases_count := cards(r.CARD).purchases_count + 1;
+                end if;
+
+                clients(r.CLIENT_ID).cashback := clients(r.CLIENT_ID).cashback + cashback;
+                if cashback > 0 then
                     clients(r.CLIENT_ID).transaction_count := clients(r.CLIENT_ID).transaction_count + 1;
+                end if;
+
+                if clients(r.CLIENT_ID).transaction_count >= 10 and
+                   clients(r.CLIENT_ID).cashback >= 100
+                then
+                    if clients(r.CLIENT_ID).cashback <= 3000
+                    then
+                        cashback_response := clients(r.CLIENT_ID).cashback;
+                    else
+                        cashback_response := 3000;
+                    end if;
                 else
-                    clients(r.CLIENT_ID) := client_type(cashback, 1);
---                     clients(r.CLIENT_ID).cashback := cashback;
+                    cashback_response := 0;
                 end if;
 
                 response := response || 'S;' ||
                             r.CARD || ';' ||
                             r.ID || ';' ||
                             cashback || ';' ||
-                            clients(r.CLIENT_ID).transaction_count || ';' ||
-                            clients(r.CLIENT_ID).cashback || chr(10);
+                            cashback_response
+                    || '   ' || clients(r.CLIENT_ID).transaction_count
+                    || chr(10);
             end loop;
-            print(response);
+
+        response := response ||
+                    'T;' || (purchase_count + refund_count) || ';0' || chr(10);
+        write_cards_cashback;
+--         print(response);
     end;
 
+    procedure manage_periods as
+        period_count number;
+    begin
+        -- init
+        select count(*) into period_count from FS11_PERIODS;
+        if period_count = 0 then
+            insert into FS11_PERIODS
+            values (to_number(to_char(sysdate, 'yyyymm')),
+                    trunc(sysdate, 'MONTH') + 9,
+                    'current');
+        end if;
+        select period_id, period_date into current_period_id, current_period_date
+        from FS11_PERIODS
+        where PERIOD_STATUS = 'current';
+    end;
 
     procedure fs11_proc_file(p_file_id varchar2) as
     begin
+
         transactions := TRANSACTION_TABLE();
+        clients.delete;
+        cards.delete;
+        array := record_fields();
 
-        select * bulk collect into mcc_rules
-        from FS11_MCC_RULES
-        where START_DATE <= file_date
-          and period_date < END_DATE;
-
-        --         select PERIOD_DATE into period_date from FS11_PERIODS where PERIOD_STATUS = 'current';
+        manage_periods;
 
         -- todo
+        file_pos := 1;
         file_id := p_file_id;
         print('File ID: ' || file_id);
         select file_content into file_content
         from FS11_FILE_CONTENT
         where FS11_FILE_CONTENT.file_id = p_file_id;
 
-
-        array := record_fields();
-        file_pos := 1;
         file_length := LENGTH(file_content);
-
-        --         purchases.delete;
---         refunds.delete;
 
         print('File length: ' || file_length);
 
@@ -353,13 +393,11 @@ create or replace package body fs11_processing_incoming_file as
                     proc_header;
                 when 'P' then
                     proc_transaction;
---                     proc_purchase;
                 when 'R' then
                     proc_transaction;
---                     fs11_proc_refund;
                 when 'T' then
                     null;
---                     fs11_proc_trailer;
+                    fs11_proc_trailer;
                 else
                     print(array(1));
                 end case;
@@ -369,33 +407,10 @@ create or replace package body fs11_processing_incoming_file as
         end loop;
 
         begin
-            --             for indx in 1 .. purchases.COUNT
---                 loop
---                     if refund_amounts.exists(purchases(indx).id) then
---                         if purchases(indx).TRANSACTION_AMOUNT - refund_amounts(purchases(indx).id) < 0 then
---                             raise_application_error(-20000, 'purchase_id = ' || purchases(indx).id);
---                         end if;
---                     end if;
---                 end loop;
 
+            process_transactions;
 
---             forall indx in 1..purchases.count
---                 insert into fs11_purchases
---                 values purchases(indx);
---
---             forall indx in 1..purchases.count
---                 insert into fs11_purchases
---                 values (purchases(indx).card_num,
---                         purchases(indx).id,
---                         purchases(indx).transaction_date,
---                         purchases(indx).transaction_amount,
---                         purchases(indx).merchant_id,
---                         to_number(purchases(indx).common, '9999'),
---                         purchases(indx).comment_purchase);
-
---      https://asktom.oracle.com/pls/asktom/f?p=100:11:0::::P11_QUESTION_ID:9539655000346985922
-
-            process_records;
+--   https://asktom.oracle.com/pls/asktom/f?p=100:11:0::::P11_QUESTION_ID:9539655000346985922
 
             insert into FS11_PURCHASES
             select card_num,
@@ -422,11 +437,6 @@ create or replace package body fs11_processing_incoming_file as
             insert into FS11_TRANSACTION_TEMP
             select *
             from table (transactions);
-            -- where transaction_type = 'R';
-
---             forall indx in 1..refunds.count
---                 insert into fs11_refunds
---                 values refunds(indx);
 
             commit;
 
@@ -441,8 +451,8 @@ create or replace package body fs11_processing_incoming_file as
         when purchases_integrity then error_log('Error in the trailer. Number of purchases is wrong.');
         when refunds_integrity then error_log('Error in the trailer. Number of refunds is wrong');
         when trans_id_exist then error_log('This transaction identifier was used before.');
-        when refund_more_than_purschase then error_log('refund_more_than_purschase ' || SQLERRM);
-        when transaction_wrong_date then error_log('transaction_wrong_date');
+--         when refund_more_than_purschase then error_log('refund_more_than_purschase ' || SQLERRM);
+--         when transaction_wrong_date then error_log('Transaction date not in current period');
 
     end;
 

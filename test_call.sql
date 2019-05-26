@@ -55,7 +55,6 @@ declare
         purchase_id     varchar2(12);
         merchant_id     varchar2(30);
         purchase_amount varchar2(30);
---         purcahses_date  date;
         refund_amount   number;
         transaction_date date;
     begin
@@ -69,8 +68,7 @@ declare
                         transaction_date := transaction_date + 1/24;
                         purchase_id := random_string(12);
                         merchant_id := merchants(random_number(merchants.COUNT) + 1).MERCHANT_ID;
-                        purchase_amount := random_number(1000) * 1000 + 1000;
---                         purcahses_date := transaction_date;
+                        purchase_amount := random_number(1000) * 10 + 10;
                         transaction := 'P;' || cards(card_indx).CARD_NUM || ';';
                         transaction := transaction || purchase_id || ';';
                         transaction := transaction || to_char(transaction_date, 'yyyymmddhh24miss') || ';';
@@ -90,9 +88,9 @@ declare
                                 refund_amount := purchase_amount;
                                 for void IN 1 .. random_number(3) + 1 -- refunds parts
                                     loop
-                                        if refund_amount <= 0 then -- comment for refunds error
-                                            exit; -- comment for refunds error
-                                        end if; -- comment for refunds error
+                                        if refund_amount <= 0 then
+                                            exit;
+                                        end if;
                                         refund_parts.extend;
                                         refund_parts(refund_parts.last) := refund_amount * DBMS_RANDOM.value;
                                         refund_amount := refund_amount - refund_parts(refund_parts.last); -- comment for refunds error
@@ -202,152 +200,6 @@ declare
         commit;
     end;
 
-   /* function generate_current_cashback_file return clob as
-        type card_cashback_table is table of integer index by varchar2 (40);
-        card_cashback          card_cashback_table;
-        type process_record is record (ID varchar2(12), CARD varchar2(40), AMOUNT number, MERCHANT number, MCC number);
-        type process_table is table of process_record;
-        processed_transactions process_table;
-        cashback               number;
-        response               clob;
-    begin
-        response := 'H;' || random_string(12) || ';' || to_char(sysdate, 'yyyymmddhh24miss') || chr(10);
-
-        select ID,
-               CARD,
-               AMOUNT,
-               MERCHANT,
-               MCC
-               bulk collect into processed_transactions
-        from (select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", mr.PERCENT_CASH "MERCHANT", mc.PERCENT_CASH "MCC"
-              from FS11_PURCHASES
-                       join FS11_MERCHANTS mr on FS11_PURCHASES.MERCHANT_ID = mr.MERCHANT_ID
-                       join FS11_MCC mc on FS11_PURCHASES.MCC = mc.MCC
-              union
-              select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", PERCENT_CASH "MERCHANT", null "MCC"
-              from FS11_REFUNDS
-                       join FS11_MERCHANTS on FS11_REFUNDS.MERCHANT_ID = FS11_MERCHANTS.MERCHANT_ID);
-
-        for i in 1 .. processed_transactions.COUNT
-            loop
-                if processed_transactions(i).MCC = 0 or processed_transactions(i).MERCHANT = 0
-                then
-                    cashback := 0;
-                else
-                    if processed_transactions(i).MERCHANT is not null
-                    then
-                        cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MERCHANT;
-                    else
-                        if processed_transactions(i).MCC is not null
-                        then
-                            cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MCC;
-                        else
-                            cashback := processed_transactions(i).AMOUNT * 0.01;
-                        end if;
-                    end if;
-                end if;
-                if (card_cashback.exists(processed_transactions(i).CARD)) then
-                    card_cashback(processed_transactions(i).CARD) :=
-                            card_cashback(processed_transactions(i).CARD) + cashback;
-                else
-                    card_cashback(processed_transactions(i).CARD) := cashback;
-                end if;
-
-                response := response || 'S;' ||
-                            processed_transactions(i).ID || ';' ||
-                            processed_transactions(i).CARD || ';' ||
-                            cashback || ';' ||
-                            card_cashback(processed_transactions(i).CARD) || chr(10);
-            end loop;
-        response := response ||
-                    'T;' || processed_transactions.COUNT || ';0' || chr(10);
-
-        return response;
-
-    end;
-
-    function generate_total_cashback_file return clob as
-        type client_cashback_table is table of integer index by pls_integer;
-        client_cashback        client_cashback_table;
-        type process_record is record (CLIENT_ID number, ID varchar2(12), CARD varchar2(40), AMOUNT number, MERCHANT number, MCC number);
-        type process_table is table of process_record;
-        processed_transactions process_table;
-        cashback               number;
-        response               clob;
-        client_id              number;
-        type card_record is record (CLIENT_ID number, MASTER_CARD varchar2(40));
-        type card_table is table of card_record;
-        master_cards           card_table;
-    begin
-        response := 'H;' || random_string(12) || ';' || to_char(sysdate, 'yyyymmddhh24miss') || ';' ||
-                    '201905' || chr(10); -- TODO Replace placeholder by date
-
-        select CLIENT_ID,
-               ID,
-               CARD,
-               AMOUNT,
-               MERCHANT,
-               MCC
-               bulk collect into processed_transactions
-        from (select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", mr.PERCENT_CASH "MERCHANT", mc.PERCENT_CASH "MCC"
-              from FS11_PURCHASES
-                       join FS11_MERCHANTS mr on FS11_PURCHASES.MERCHANT_ID = mr.MERCHANT_ID
-                       join FS11_MCC mc on FS11_PURCHASES.MCC = mc.MCC
-              union
-              select ID, CARD_NUM "CARD", TRANSACTION_AMOUNT "AMOUNT", PERCENT_CASH "MERCHANT", null "MCC"
-              from FS11_REFUNDS
-                       join FS11_MERCHANTS on FS11_REFUNDS.MERCHANT_ID = FS11_MERCHANTS.MERCHANT_ID)
-                 join FS11_CARDS on CARD = FS11_CARDS.CARD_NUM;
-
-        for i in 1 .. processed_transactions.COUNT
-            loop
-                if processed_transactions(i).MCC = 0 or processed_transactions(i).MERCHANT = 0
-                then
-                    cashback := 0;
-                else
-                    if processed_transactions(i).MERCHANT is not null
-                    then
-                        cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MERCHANT;
-                    else
-                        if processed_transactions(i).MCC is not null
-                        then
-                            cashback := processed_transactions(i).AMOUNT * processed_transactions(i).MCC;
-                        else
-                            cashback := processed_transactions(i).AMOUNT * 0.01;
-                        end if;
-                    end if;
-                end if;
-                if (client_cashback.exists(processed_transactions(i).CLIENT_ID)) then
-                    client_cashback(processed_transactions(i).CLIENT_ID) :=
-                            client_cashback(processed_transactions(i).CLIENT_ID) + cashback;
-                else
-                    client_cashback(processed_transactions(i).CLIENT_ID) := cashback;
-                end if;
-            end loop;
-
-        select CLIENT_ID,
-               CARD_NUM "MASTER_CARD"
-               bulk collect into master_cards
-        from FS11_CARDS
-        where CARD_ROLE = 'master';
-
-
-        for i in 1 .. master_cards.COUNT
-            loop
-                if (client_cashback.exists(master_cards(i).CLIENT_ID)) then
-                    response := response || 'C;' ||
-                                master_cards(i).MASTER_CARD || ';' ||
-                                client_cashback(master_cards(i).CLIENT_ID) || chr(10);
-                end if;
-            end loop;
-
-        response := response ||
-                    'T;' || client_cashback.COUNT || chr(10);
-
-        return response;
-
-    end;
-*/
     procedure generate_merchants(merch_count number) as
     begin
         for i in 1 .. merch_count
@@ -423,15 +275,11 @@ declare
 
 
 begin
---     print(generate_current_cashback_file);
---     print(generate_total_cashback_file);
---     return;
-
     trunc_tables;
 
     file_id := random_string(12);
     generate_MCC(500);
-    generate_merchants(100);
+    generate_merchants(10);
     generate_rules;
     generate_clients(10);
     generate_cards(per_client_card_count => 3);
