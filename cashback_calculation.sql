@@ -1,15 +1,14 @@
 create or replace package fs11_cashback_calcuation as
-
 end fs11_cashback_calcuation;
 
 create or replace package body fs11_cashback_calcuation as
 
     function calculation (p_transaction_id varchar2) return number as
-    calc_cash number;
+    --calc_cash number;
     begin
-        --null;
+        null;
         -- minus, if refund
-
+        /*
         select CLIENT_ID, SUM(AMOUNT)
         from (select CLIENT_ID, sum(PURCHASE_AMOUNT) "AMOUNT"
               from (select CARD_NUM "CARD", sum(TRANSACTION_AMOUNT) "PURCHASE_AMOUNT"
@@ -29,6 +28,7 @@ create or replace package body fs11_cashback_calcuation as
         group by CLIENT_ID;
 
         return calc_cash;
+         */
     end;
 
     savepoint calculation;

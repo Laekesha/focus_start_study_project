@@ -49,7 +49,7 @@ create or replace package body fs11_processing_incoming_file as
         dbms_output.put_line(p_message);
     end;
 
-    procedure proc_header as -- control of unique ?
+    procedure proc_header as
     begin
         file_date := to_date(array(3), 'yyyymmddhh24miss');
 --         file_id := array(2);
@@ -63,7 +63,6 @@ create or replace package body fs11_processing_incoming_file as
 
     procedure proc_transaction as
     begin
-        null;
         transactions.extend;
         transactions(transactions.last) := TRANSACTION_TYPE(
                 array(1),
@@ -409,8 +408,6 @@ create or replace package body fs11_processing_incoming_file as
         begin
 
             process_transactions;
-
---   https://asktom.oracle.com/pls/asktom/f?p=100:11:0::::P11_QUESTION_ID:9539655000346985922
 
             insert into FS11_PURCHASES
             select card_num,
